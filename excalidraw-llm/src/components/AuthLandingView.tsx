@@ -70,21 +70,26 @@ export const AuthLandingView: React.FC = () => {
         boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7), 0 0 40px rgba(56, 189, 248, 0.1)',
         textAlign: 'center'
       }}>
-        {/* Brand Header */}
+        {/* Brand Header Logo */}
         <div style={{
-          width: '56px',
-          height: '56px',
+          width: '64px',
+          height: '64px',
           borderRadius: '16px',
-          background: 'linear-gradient(135deg, #38bdf8 0%, #818cf8 100%)',
+          backgroundColor: 'rgba(255, 255, 255, 0.05)',
+          border: '1px solid rgba(255, 255, 255, 0.15)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          margin: '0 auto 1.5rem auto',
-          boxShadow: '0 10px 20px rgba(56, 189, 248, 0.3)'
+          margin: '0 auto 1.25rem auto',
+          boxShadow: '0 10px 25px rgba(0, 0, 0, 0.4)',
+          overflow: 'hidden',
+          padding: '6px'
         }}>
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
-          </svg>
+          <img
+            src="https://pub-c1d80f0f7327493997a3c1285f43a9ea.r2.dev/amrit_logo.png"
+            alt="Logo"
+            style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+          />
         </div>
 
         <h1 style={{ fontSize: '1.85rem', fontWeight: 800, margin: '0 0 0.5rem 0', letterSpacing: '-0.02em', color: '#ffffff' }}>
