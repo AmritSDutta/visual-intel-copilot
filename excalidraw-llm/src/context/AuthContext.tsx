@@ -9,6 +9,7 @@ interface AuthContextType {
   isConfigured: boolean;
   sendMagicLink: (email: string) => Promise<{ error: AuthError | Error | null }>;
   verifyOtp: (email: string, token: string) => Promise<{ error: AuthError | Error | null }>;
+  signInWithGoogle: () => Promise<{ error: AuthError | Error | null }>;
   signOut: () => Promise<{ error: AuthError | Error | null }>;
 }
 
@@ -19,6 +20,7 @@ const AuthContext = createContext<AuthContextType>({
   isConfigured: false,
   sendMagicLink: async () => ({ error: null }),
   verifyOtp: async () => ({ error: null }),
+  signInWithGoogle: async () => ({ error: null }),
   signOut: async () => ({ error: null })
 });
 
@@ -77,6 +79,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return { error };
   };
 
+  const signInWithGoogle = async () => {
+    if (!configured) return { error: new Error('Supabase is not configured.') };
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: window.location.origin
+      }
+    });
+    return { error };
+  };
+
   const signOut = async () => {
     if (!configured) return { error: null };
     const { error } = await supabase.auth.signOut();
@@ -96,6 +109,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isConfigured: configured,
         sendMagicLink,
         verifyOtp,
+        signInWithGoogle,
         signOut
       }}
     >

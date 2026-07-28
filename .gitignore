@@ -24,5 +24,4 @@ dist-ssr
 *.sw?
 graphify-out/*
 CLAUDE.md 
-
-
+AGENTS.md
