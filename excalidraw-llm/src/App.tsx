@@ -653,12 +653,22 @@ function MainWorkspace() {
                     Key is saved in ephemeral <code>sessionStorage</code> and cleared automatically on tab close.
                   </div>
 
-                  <label style={{ marginTop: '12px' }}>Ollama Model Name</label>
+                  <label style={{ marginTop: '12px' }}>Ollama Model Preset</label>
+                  <select
+                    value={ollamaModel}
+                    onChange={(e) => setOllamaModel(e.target.value)}
+                    className="model-select"
+                    style={{ marginBottom: '8px' }}
+                  >
+                    <option value="gemma4:31b-cloud">gemma4:31b-cloud (Gemma 4 31B Cloud)</option>
+                    <option value="deepseek-v4-flash:cloud">deepseek-v4-flash:cloud (DeepSeek v4 Flash Cloud)</option>
+                    <option value="nemotron-3-nano:30b-cloud">nemotron-3-nano:30b-cloud (Nemotron 3 Nano 30B Cloud)</option>
+                  </select>
                   <input
                     type="text"
                     value={ollamaModel}
                     onChange={(e) => setOllamaModel(e.target.value)}
-                    placeholder="gemma4:31b-cloud"
+                    placeholder="Or enter custom model name..."
                   />
                   <div className="setting-hint">
                     For local Ollama, ensure CORS is enabled: <code>$env:OLLAMA_ORIGINS="*"</code>
@@ -684,8 +694,9 @@ function MainWorkspace() {
                     className="model-select"
                   >
                     <option value="gemini-3.1-flash-lite">gemini-3.1-flash-lite (Fastest)</option>
-                    <option value="gemini-2.5-flash">gemini-2.5-flash (Balanced)</option>
-                    <option value="gemini-2.5-pro">gemini-2.5-pro (Highest Reasoning)</option>
+                    <option value="gemini-3.5-flash-lite">gemini-3.5-flash-lite (Ultra-Fast 3.5)</option>
+                    <option value="gemma-4-31b-it">gemma-4-31b-it (Gemma 4 31B Instruct)</option>
+                    <option value="gemma-4-26b-it">gemma-4-26b-it (Gemma 4 26B Instruct)</option>
                   </select>
                 </div>
               )}
