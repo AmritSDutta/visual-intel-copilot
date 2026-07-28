@@ -45,7 +45,7 @@ function MainWorkspace() {
     (sessionStorage.getItem('AI_PROVIDER') as 'ollama' | 'gemini') || 'ollama'
   )
   const [ollamaEndpoint, setOllamaEndpoint] = useState(() => 
-    sessionStorage.getItem('OLLAMA_ENDPOINT') || 'http://localhost:11434'
+    sessionStorage.getItem('OLLAMA_ENDPOINT') || 'https://ollama.com'
   )
   const [ollamaModel, setOllamaModel] = useState(() => 
     sessionStorage.getItem('OLLAMA_MODEL') || 'gemma4:31b-cloud'
@@ -661,8 +661,6 @@ function MainWorkspace() {
                     style={{ marginBottom: '8px' }}
                   >
                     <option value="gemma4:31b-cloud">gemma4:31b-cloud (Gemma 4 31B Cloud)</option>
-                    <option value="qwen3.5:cloud">qwen3.5:cloud (Qwen 3.5 Cloud)</option>
-                    <option value="nemotron-3-nano:30b-cloud">nemotron-3-nano:30b-cloud (Nemotron 3 Nano 30B Cloud)</option>
                   </select>
                   <input
                     type="text"
