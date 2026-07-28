@@ -63,16 +63,28 @@ npm run dev
 ```
 
 ### 3. Running Local Ollama (Recommended)
-To enable browser requests to local Ollama, launch Ollama with CORS origins enabled:
+To enable browser requests to local Ollama from deployed web origins (such as `https://inquisitive.amritai.org`), configure `OLLAMA_ORIGINS`. For official details, see the [Ollama Web Origins FAQ](https://docs.ollama.com/faq#how-can-i-allow-additional-web-origins-to-access-ollama).
 
+#### Quick Test (PowerShell Session)
 ```powershell
-# Windows (PowerShell)
 $env:OLLAMA_ORIGINS="*"
 ollama serve
 
 # Pull the model (in a separate terminal)
 ollama pull gemma4:31b-cloud
 ```
+
+#### Permanent Windows Environment Variable Setup
+1. Press `Win + R`, type `sysdm.cpl`, and press **Enter**.
+2. Select the **Advanced** tab and click **Environment Variables...**.
+3. Under **User variables**, find and select `OLLAMA_ORIGINS` (or click **New...** if it doesn't exist).
+4. Set the value to:
+   ```text
+   http://localhost:*,https://inquisitive.amritai.org
+   ```
+5. Click **OK** on all dialog boxes.
+6. Right-click the Ollama icon in your system tray (bottom-right taskbar) and select **Quit**.
+7. Relaunch Ollama from your Start menu.
 
 ---
 
