@@ -1,6 +1,6 @@
 import { convertToExcalidrawElements } from '@excalidraw/excalidraw';
 import { GoogleGenAI } from '@google/genai';
-import { buildLibraryCatalog, hydrateSkeletonsWithLibrary } from '../utils/libraryIndexer';
+import { buildLibraryCatalog, hydrateSkeletonsWithLibrary, sanitizeSkeletonsForExcalidraw } from '../utils/libraryIndexer';
 import { repairAndParseJson } from '../utils/jsonRepair';
 
 export interface AIDiagramResult {
@@ -118,7 +118,8 @@ function processResponseJson(cleanJsonStr: string, rawLibraryItems: any[]): AIDi
   }
 
   const { standardSkeletons, hydratedElements } = hydrateSkeletonsWithLibrary(skeletons, rawLibraryItems);
-  const convertedStandard = convertToExcalidrawElements(standardSkeletons, { regenerateIds: true });
+  const sanitizedSkeletons = sanitizeSkeletonsForExcalidraw(standardSkeletons);
+  const convertedStandard = convertToExcalidrawElements(sanitizedSkeletons, { regenerateIds: true });
   const finalElements = [...convertedStandard, ...hydratedElements];
 
   return {

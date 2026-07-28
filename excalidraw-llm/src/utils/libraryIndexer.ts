@@ -10,10 +10,10 @@ export function buildLibraryCatalog(libraryItems: any[]): LibraryCatalogItem[] {
   if (!Array.isArray(libraryItems)) return [];
 
   return libraryItems.map((item, index) => {
-    const itemId = item.id || `lib_item_${index}`;
+    const itemId = item?.id || `lib_item_${index}`;
     // Look for text element inside the library item to use as descriptive component name
-    const textElement = Array.isArray(item.elements) 
-      ? item.elements.find((e: any) => e.type === 'text' && typeof e.text === 'string' && e.text.trim()) 
+    const textElement = Array.isArray(item?.elements) 
+      ? item.elements.find((e: any) => e && e.type === 'text' && typeof e.text === 'string' && e.text.trim()) 
       : null;
 
     let componentName = (textElement && typeof textElement.text === 'string')
@@ -32,6 +32,44 @@ export function buildLibraryCatalog(libraryItems: any[]): LibraryCatalogItem[] {
 }
 
 /**
+  * Sanitizes element skeletons to guarantee valid top-level text string properties for convertToExcalidrawElements.
+  */
+export function sanitizeSkeletonsForExcalidraw(skeletons: any[]): any[] {
+  if (!Array.isArray(skeletons)) return [];
+
+  return skeletons
+    .filter(item => item && typeof item === 'object' && typeof item.type === 'string')
+    .map(item => {
+      const el = { ...item };
+
+      // Ensure unique element ID
+      if (!el.id) {
+        el.id = `el_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      }
+
+      // CRITICAL: type: "text" elements MUST have a valid top-level string text property for convertToExcalidrawElements
+      if (el.type === 'text') {
+        const textContent = typeof el.text === 'string'
+          ? el.text
+          : (typeof el.label?.text === 'string' ? el.label.text : (typeof el.label === 'string' ? el.label : 'Text'));
+        el.text = textContent || 'Text';
+      }
+
+      // Normalize label objects
+      if (el.label && typeof el.label === 'object') {
+        el.label = {
+          ...el.label,
+          text: typeof el.label.text === 'string' ? el.label.text : (typeof el.text === 'string' ? el.text : '')
+        };
+      } else if (typeof el.label === 'string') {
+        el.label = { text: el.label };
+      }
+
+      return el;
+    });
+}
+
+/**
   * Replaces libraryItem references from LLM JSON with actual cloned vector elements offset to target (x, y),
   * and pre-processes arrow skeletons to ensure points, arrowheads, and bindings render visibly.
   */
@@ -44,9 +82,9 @@ export function hydrateSkeletonsWithLibrary(skeletons: any[], rawLibraryItems: a
   const libraryMap = new Map<string, any>();
   if (Array.isArray(rawLibraryItems)) {
     rawLibraryItems.forEach((item, index) => {
-      const id = item.id || `lib_item_${index}`;
+      const id = item?.id || `lib_item_${index}`;
       libraryMap.set(id, item);
-      const textElement = Array.isArray(item.elements) ? item.elements.find((e: any) => e.type === 'text') : null;
+      const textElement = Array.isArray(item?.elements) ? item.elements.find((e: any) => e && e.type === 'text' && typeof e.text === 'string') : null;
       if (textElement && typeof textElement.text === 'string') {
         libraryMap.set(textElement.text.toLowerCase().trim(), item);
       }
@@ -150,13 +188,11 @@ export function hydrateSkeletonsWithLibrary(skeletons: any[], rawLibraryItems: a
 
         if (Math.abs(dx) >= Math.abs(dy)) {
           if (dx >= 0) {
-            // A is to the left of B -> Right edge of A to Left edge of B
             startX = startShape.x + startShape.width;
             startY = centerAY;
             endX = endShape.x;
             endY = centerBY;
           } else {
-            // A is to the right of B -> Left edge of A to Right edge of B
             startX = startShape.x;
             startY = centerAY;
             endX = endShape.x + endShape.width;
@@ -164,13 +200,11 @@ export function hydrateSkeletonsWithLibrary(skeletons: any[], rawLibraryItems: a
           }
         } else {
           if (dy >= 0) {
-            // A is above B -> Bottom edge of A to Top edge of B
             startX = centerAX;
             startY = startShape.y + startShape.height;
             endX = centerBX;
             endY = endShape.y;
           } else {
-            // A is below B -> Top edge of A to Bottom edge of B
             startX = centerAX;
             startY = startShape.y;
             endX = centerBX;
