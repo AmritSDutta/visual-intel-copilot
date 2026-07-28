@@ -9,7 +9,7 @@ export interface AIDiagramResult {
 }
 
 export function stripMarkdown(text: string): string {
-  if (!text) return '';
+  if (!text || typeof text !== 'string') return '';
   return text
     .replace(/^#+\s+/gm, '')             // Remove # headers
     .replace(/\*\*(.*?)\*\*/g, '$1')     // Remove **bold**
@@ -159,8 +159,11 @@ export async function generateDiagramFromPrompt(
       }
     });
 
-    const rawText = response?.text || '';
+    const rawText = typeof response?.text === 'string' ? response.text : '';
     let cleanJsonStr = rawText.trim();
+    if (!cleanJsonStr) {
+      throw new Error(`Gemini API (${targetModel}) returned no text content. Please check prompt or API key permissions.`);
+    }
     if (cleanJsonStr.startsWith('```')) {
       cleanJsonStr = cleanJsonStr.replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim();
     }

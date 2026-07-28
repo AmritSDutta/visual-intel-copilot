@@ -13,10 +13,12 @@ export function buildLibraryCatalog(libraryItems: any[]): LibraryCatalogItem[] {
     const itemId = item.id || `lib_item_${index}`;
     // Look for text element inside the library item to use as descriptive component name
     const textElement = Array.isArray(item.elements) 
-      ? item.elements.find((e: any) => e.type === 'text' && e.text && e.text.trim()) 
+      ? item.elements.find((e: any) => e.type === 'text' && typeof e.text === 'string' && e.text.trim()) 
       : null;
 
-    let componentName = textElement ? textElement.text.replace(/[\r\n]+/g, ' ').trim() : `Component ${index + 1}`;
+    let componentName = (textElement && typeof textElement.text === 'string')
+      ? textElement.text.replace(/[\r\n]+/g, ' ').trim() 
+      : `Component ${index + 1}`;
     // Sanitize component name
     if (componentName.length > 40) {
       componentName = componentName.substring(0, 40) + '...';
@@ -45,7 +47,7 @@ export function hydrateSkeletonsWithLibrary(skeletons: any[], rawLibraryItems: a
       const id = item.id || `lib_item_${index}`;
       libraryMap.set(id, item);
       const textElement = Array.isArray(item.elements) ? item.elements.find((e: any) => e.type === 'text') : null;
-      if (textElement && textElement.text) {
+      if (textElement && typeof textElement.text === 'string') {
         libraryMap.set(textElement.text.toLowerCase().trim(), item);
       }
     });
