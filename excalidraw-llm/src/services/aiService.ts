@@ -55,6 +55,7 @@ STRICT RULES:
    - Database / Storage: backgroundColor "#701a75", strokeColor "#d946ef"
    - Cache / Queue / Worker: backgroundColor "#7c2d12", strokeColor "#f97316"
    - Default shape: backgroundColor "#1f2937", strokeColor "#9ca3af"${catalogText}
+   - try to suggest most specific shapes found in the shared libaries
 
 Example JSON output format:
 {
