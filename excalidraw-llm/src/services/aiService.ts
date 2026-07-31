@@ -131,50 +131,64 @@ function processResponseJson(cleanJsonStr: string, rawLibraryItems: any[]): AIDi
 
 function normalizeGeminiModel(modelName: string): string {
   const trimmed = (modelName || '').trim();
-  return trimmed || 'gemini-3.1-flash-lite';
+  if (!trimmed || trimmed.includes('native-audio')) {
+    return 'gemini-2.5-flash';
+  }
+  return trimmed;
 }
 
 export async function generateDiagramFromPrompt(
   prompt: string,
   apiKey: string,
-  modelName: string = 'gemini-3.1-flash-lite',
+  modelName: string = 'gemini-2.5-flash',
   rawLibraryItems: any[] = []
 ): Promise<AIDiagramResult> {
   if (!apiKey) {
-    throw new Error('Gemini API key is required. Please set your API key in the chat header settings.');
+    throw new Error('Gemini API key is required. Please set your API key in the settings (⚙️) panel.');
   }
 
   const systemInstruction = getSystemInstruction(rawLibraryItems);
-  const targetModel = normalizeGeminiModel(modelName);
+  const primaryModel = normalizeGeminiModel(modelName);
 
-  try {
-    const ai = new GoogleGenAI({ apiKey });
+  const candidateModels = Array.from(new Set([
+    primaryModel,
+    'gemini-3.1-flash-lite',
+  ]));
 
-    const response = await ai.models.generateContent({
-      model: targetModel,
-      contents: prompt,
-      config: {
-        systemInstruction,
-        temperature: 0.2,
-        maxOutputTokens: 8192,
-        responseMimeType: 'application/json'
+  let lastError: Error | null = null;
+  const ai = new GoogleGenAI({ apiKey });
+
+  for (const targetModel of candidateModels) {
+    try {
+      console.log(`[Gemini AI] Requesting diagram generation from model: ${targetModel}`);
+      const response = await ai.models.generateContent({
+        model: targetModel,
+        contents: prompt,
+        config: {
+          systemInstruction,
+          temperature: 0.2,
+          maxOutputTokens: 8192,
+          responseMimeType: 'application/json'
+        }
+      });
+
+      const rawText = typeof response?.text === 'string' ? response.text : '';
+      let cleanJsonStr = rawText.trim();
+      if (!cleanJsonStr) {
+        continue;
       }
-    });
+      if (cleanJsonStr.startsWith('```')) {
+        cleanJsonStr = cleanJsonStr.replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim();
+      }
 
-    const rawText = typeof response?.text === 'string' ? response.text : '';
-    let cleanJsonStr = rawText.trim();
-    if (!cleanJsonStr) {
-      throw new Error(`Gemini API (${targetModel}) returned no text content. Please check prompt or API key permissions.`);
+      return processResponseJson(cleanJsonStr, rawLibraryItems);
+    } catch (err: any) {
+      console.warn(`[Gemini AI] Model ${targetModel} failed, trying next candidate:`, err?.message);
+      lastError = err;
     }
-    if (cleanJsonStr.startsWith('```')) {
-      cleanJsonStr = cleanJsonStr.replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim();
-    }
-
-    return processResponseJson(cleanJsonStr, rawLibraryItems);
-  } catch (err: any) {
-    console.error('Google Gen AI SDK Error:', err);
-    throw new Error(`Gemini API Error (${targetModel}): ${err?.message || 'Failed to generate diagram.'}`);
   }
+
+  throw new Error(`Gemini API Error: ${lastError?.message || 'Failed to generate diagram.'}`);
 }
 
 export async function generateDiagramWithOllama(

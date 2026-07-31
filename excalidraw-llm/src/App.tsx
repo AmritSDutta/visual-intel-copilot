@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Excalidraw } from '@excalidraw/excalidraw'
 import '@excalidraw/excalidraw/index.css'
 import './App.css'
@@ -9,8 +9,9 @@ import { exportSessionToPdf } from './services/pdfExportService'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { ConfigMissingScreen } from './components/ConfigMissingScreen'
 import { AuthLandingView } from './components/AuthLandingView'
-import { UserMenu } from './components/UserMenu'
 import { saveCloudSessionTurn, getCloudSessionsSummary, getCloudSessionTurns, deleteCloudSession } from './services/supabaseDbService'
+import { VoiceWorkspace } from './components/VoiceWorkspace'
+import { AppHeader } from './components/AppHeader'
 
 interface Message {
   id: string
@@ -20,7 +21,11 @@ interface Message {
   suggestions?: string[]
 }
 
-function MainWorkspace() {
+interface MainWorkspaceProps {
+  onNavigate?: (path: string) => void
+}
+
+function MainWorkspace({ onNavigate }: MainWorkspaceProps) {
   const { user } = useAuth()
   const [input, setInput] = useState('')
   const [excalidrawAPI, setExcalidrawAPI] = useState<any>(null)
@@ -70,17 +75,18 @@ function MainWorkspace() {
       text: 'Hello! I am here to help you digest visually.',
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       suggestions: [
-        'Draw User Authentication Flow',
-        'Draw E-Commerce System Architecture',
-        'Draw Microservices Diagram'
+        'How Mamba and transformer architecture works?',
+        'Draw a rate limiter',
+        'Draw Microservices Diagram in detils'
       ]
     }
   ])
 
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+
   useEffect(() => {
-    sessionStorage.setItem('AI_PROVIDER', provider)
-    localStorage.removeItem('AI_PROVIDER')
-  }, [provider])
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages, isLoading])
 
   useEffect(() => {
     sessionStorage.setItem('OLLAMA_ENDPOINT', ollamaEndpoint)
@@ -212,8 +218,9 @@ function MainWorkspace() {
     }
   }
 
-  const handleDeleteSession = async (targetSessionId: string) => {
-    if (!confirm('Are you sure you want to delete this session?')) return
+  const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null)
+
+  const confirmDeleteSession = async (targetSessionId: string) => {
     try {
       if (user) {
         await deleteCloudSession(user.id, targetSessionId).catch(() => {})
@@ -420,164 +427,23 @@ function MainWorkspace() {
   return (
     <div className="app-container">
       {/* 100% Full-Width Top Page Header */}
-      <header className="app-header">
-        <div className="header-brand">
-          <h1>💡 Inquisitive</h1>
-          <span style={{ fontSize: '12px', color: '#9ca3af', fontWeight: 'normal', borderLeft: '1px solid #374151', paddingLeft: '10px' }}>
-            Visual Intelligence
-          </span>
-          <div className="status-badge">
-            <span className={`status-dot ${isLoading ? 'loading' : ''}`}></span>
-            {isLoading
-              ? 'Generating...'
-              : provider === 'ollama'
-              ? `🦙 Ollama Local (${ollamaModel})`
-              : `✨ Gemini Cloud (${modelName || 'gemini-3.1-flash-lite'})`}
-          </div>
-        </div>
-
-        <div className="header-actions">
-          {/* Quick Provider Toggle Pills & Settings Icon */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '2px', background: 'rgba(255, 255, 255, 0.05)', borderRadius: '6px', padding: '2px', border: '1px solid var(--border-color)' }}>
-            <button
-              style={{
-                padding: '4px 10px',
-                fontSize: '11px',
-                background: provider === 'ollama' ? 'var(--accent-gradient)' : 'transparent',
-                border: 'none',
-                color: provider === 'ollama' ? '#fff' : 'var(--text-secondary)',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                fontWeight: provider === 'ollama' ? 'bold' : 'normal'
-              }}
-              onClick={() => setProvider('ollama')}
-            >
-              🦙 Ollama
-            </button>
-            <button
-              style={{
-                padding: '4px 10px',
-                fontSize: '11px',
-                background: provider === 'gemini' ? 'var(--accent-gradient)' : 'transparent',
-                border: 'none',
-                color: provider === 'gemini' ? '#fff' : 'var(--text-secondary)',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                fontWeight: provider === 'gemini' ? 'bold' : 'normal'
-              }}
-              onClick={() => setProvider('gemini')}
-            >
-              ✨ Gemini
-            </button>
-            <button
-              className="settings-btn"
-              style={{
-                padding: '3px 7px',
-                fontSize: '13px',
-                background: 'transparent',
-                border: 'none',
-                color: 'var(--text-primary)',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}
-              onClick={() => setShowSettings(!showSettings)}
-              aria-label="Configure Model & API Keys"
-              title="Configure Models & API Keys"
-            >
-              ⚙️
-            </button>
-          </div>
-
-          <div style={{ height: '16px', width: '1px', background: 'var(--border-color)' }}></div>
-
-          <button
-            className="provider-tab"
-            style={{
-              padding: '4px 10px',
-              fontSize: '12px',
-              background: 'rgba(99, 102, 241, 0.15)',
-              border: '1px solid #6366f1',
-              color: '#818cf8',
-              borderRadius: '6px',
-              cursor: 'pointer'
-            }}
-            onClick={handleNewSession}
-            title="Start a Fresh Session"
-          >
-            ➕ New Session
-          </button>
-          <button
-            className="provider-tab"
-            style={{
-              padding: '4px 10px',
-              fontSize: '12px',
-              background: 'rgba(255, 255, 255, 0.05)',
-              border: '1px solid var(--border-color)',
-              color: 'var(--text-secondary)',
-              borderRadius: '6px',
-              cursor: 'pointer'
-            }}
-            onClick={handleOpenHistory}
-            title="View & Export History Sessions"
-          >
-            📁 History
-          </button>
-          <button
-            className="provider-tab"
-            style={{
-              padding: '4px 10px',
-              fontSize: '12px',
-              background: 'rgba(255, 255, 255, 0.05)',
-              border: '1px solid var(--border-color)',
-              color: 'var(--text-secondary)',
-              borderRadius: '6px',
-              cursor: 'pointer'
-            }}
-            onClick={handleExportPng}
-            title="Export Canvas as PNG Image"
-          >
-            📷 PNG
-          </button>
-          <button
-            className="provider-tab"
-            style={{
-              padding: '4px 10px',
-              fontSize: '12px',
-              background: isCanvasFrozen ? 'rgba(99, 102, 241, 0.2)' : 'rgba(255, 255, 255, 0.05)',
-              border: isCanvasFrozen ? '1px solid #6366f1' : '1px solid var(--border-color)',
-              color: isCanvasFrozen ? '#818cf8' : 'var(--text-secondary)',
-              borderRadius: '6px',
-              cursor: 'pointer'
-            }}
-            onClick={() => setIsCanvasFrozen(!isCanvasFrozen)}
-            title={isCanvasFrozen ? "Canvas Frozen (AI Mode) — Click to Unlock Manual Edits" : "Canvas Unlocked — Click to Freeze for AI Mode"}
-          >
-            {isCanvasFrozen ? '🔒 AI Lock' : '✏️ Editing'}
-          </button>
-
-          <button
-            className="provider-tab"
-            style={{
-              padding: '4px 10px',
-              fontSize: '12px',
-              background: 'rgba(255, 255, 255, 0.05)',
-              border: '1px solid var(--border-color)',
-              color: 'var(--text-primary)',
-              borderRadius: '6px',
-              cursor: 'pointer'
-            }}
-            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-            title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Theme`}
-          >
-            {theme === 'dark' ? '🌙 Dark' : '☀️ Light'}
-          </button>
-
-          <UserMenu />
-        </div>
-      </header>
+      <AppHeader
+        currentPath="/"
+        onNavigate={onNavigate}
+        provider={provider}
+        setProvider={setProvider}
+        isLoading={isLoading}
+        onOpenHistory={handleOpenHistory}
+        onOpenSettings={() => setShowSettings(true)}
+        onExportPng={handleExportPng}
+        onNewSession={handleNewSession}
+        theme={theme}
+        onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+        isCanvasFrozen={isCanvasFrozen}
+        onToggleCanvasLock={() => setIsCanvasFrozen(!isCanvasFrozen)}
+        ollamaModel={ollamaModel}
+        modelName={modelName}
+      />
 
       {/* Settings Popup Window */}
       {showSettings && (
@@ -753,7 +619,7 @@ function MainWorkspace() {
                         </button>
                         <button
                           className="history-btn delete-btn"
-                          onClick={() => handleDeleteSession(summary.session_id)}
+                          onClick={() => setDeletingSessionId(summary.session_id)}
                           title="Delete Session"
                         >
                           🗑️
@@ -767,6 +633,41 @@ function MainWorkspace() {
 
             <div className="popup-footer">
               <button className="popup-done-btn" onClick={() => setShowHistory(false)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Popup Window */}
+      {deletingSessionId && (
+        <div className="popup-overlay" onClick={() => setDeletingSessionId(null)}>
+          <div className="popup-window" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '420px', textAlign: 'center' }}>
+            <div className="popup-header" style={{ justifyContent: 'center' }}>
+              <h3 style={{ color: '#ef4444' }}>🗑️ Confirm Deletion</h3>
+            </div>
+            <div className="popup-body" style={{ padding: '20px 10px', fontSize: '14px', color: 'var(--text-secondary)' }}>
+              Are you sure you want to permanently delete this diagram session? This action cannot be undone.
+            </div>
+            <div className="popup-footer" style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+              <button
+                className="popup-done-btn"
+                style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', color: 'var(--text-secondary)' }}
+                onClick={() => setDeletingSessionId(null)}
+              >
+                Cancel
+              </button>
+              <button
+                className="popup-done-btn"
+                style={{ background: '#ef4444', color: '#ffffff' }}
+                onClick={() => {
+                  if (deletingSessionId) {
+                    confirmDeleteSession(deletingSessionId);
+                    setDeletingSessionId(null);
+                  }
+                }}
+              >
+                Yes, Delete
+              </button>
             </div>
           </div>
         </div>
@@ -834,6 +735,7 @@ function MainWorkspace() {
                 </div>
               </div>
             ))}
+            <div ref={messagesEndRef} />
           </div>
 
           <div className="chat-input-container">
@@ -845,7 +747,7 @@ function MainWorkspace() {
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
                 disabled={isLoading}
-                rows={1}
+                rows={3}
               />
               <button
                 className="send-btn"
@@ -875,6 +777,18 @@ function MainWorkspace() {
 
 function AppContent() {
   const { user, loading, isConfigured } = useAuth()
+  const [currentPath, setCurrentPath] = useState<string>(() => window.location.pathname)
+
+  useEffect(() => {
+    const handlePopState = () => setCurrentPath(window.location.pathname)
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [])
+
+  const navigate = (path: string) => {
+    window.history.pushState({}, '', path)
+    setCurrentPath(path)
+  }
 
   if (!isConfigured) {
     return <ConfigMissingScreen />
@@ -905,7 +819,11 @@ function AppContent() {
     return <AuthLandingView />
   }
 
-  return <MainWorkspace />
+  if (currentPath === '/voice') {
+    return <VoiceWorkspace onNavigate={navigate} />
+  }
+
+  return <MainWorkspace onNavigate={navigate} />
 }
 
 export default function App() {
