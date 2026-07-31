@@ -93,7 +93,7 @@ export function VoiceWorkspace({ onNavigate }: VoiceWorkspaceProps) {
     {
       id: '1',
       sender: 'assistant',
-      text: '🎙️ Welcome to Voice Canvas! Speak your idea or architectural requirements, and I will generate the diagram while answering you aloud.',
+      text: '',
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       suggestions: [
         'Design a high-scale Voice Stream Pipeline',
@@ -196,7 +196,7 @@ export function VoiceWorkspace({ onNavigate }: VoiceWorkspaceProps) {
       {
         id: Date.now().toString(),
         sender: 'assistant',
-        text: '🎙️ Started a fresh Voice session! Tap the microphone and speak your diagram idea.',
+        text: '',
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         suggestions: [
           'Design a high-scale Voice Stream Pipeline',
@@ -664,29 +664,33 @@ export function VoiceWorkspace({ onNavigate }: VoiceWorkspaceProps) {
           <div className="chat-messages">
             {messages.map((msg) => (
               <div key={msg.id} className={`message ${msg.sender}`}>
-                <div className="avatar">
-                  {msg.sender === 'assistant' ? '🎙️' : '👤'}
-                </div>
-                <div className="message-content" style={{ position: 'relative', width: '100%' }}>
-                  <div className="message-bubble">
-                    <button
-                      className="copy-msg-btn"
-                      onClick={() => handleCopy(msg.id, msg.text)}
-                      title="Copy response"
-                    >
-                      {copiedMsgId === msg.id ? '✓ Copied' : 'Copy'}
-                    </button>
-                    {msg.sender === 'assistant' && (
-                      <button
-                        className="replay-voice-btn"
-                        onClick={() => handleReplayVoice(msg.text)}
-                        title="Replay Voice Answer"
-                      >
-                        🔊 Speak
-                      </button>
-                    )}
-                    <div style={{ whiteSpace: 'pre-wrap' }}>{msg.text}</div>
+                {msg.text && (
+                  <div className="avatar">
+                    {msg.sender === 'assistant' ? '🎙️' : '👤'}
                   </div>
+                )}
+                <div className="message-content" style={{ position: 'relative', width: '100%' }}>
+                  {msg.text && (
+                    <div className="message-bubble">
+                      <button
+                        className="copy-msg-btn"
+                        onClick={() => handleCopy(msg.id, msg.text)}
+                        title="Copy response"
+                      >
+                        {copiedMsgId === msg.id ? '✓ Copied' : 'Copy'}
+                      </button>
+                      {msg.sender === 'assistant' && (
+                        <button
+                          className="replay-voice-btn"
+                          onClick={() => handleReplayVoice(msg.text)}
+                          title="Replay Voice Answer"
+                        >
+                          🔊 Speak
+                        </button>
+                      )}
+                      <div style={{ whiteSpace: 'pre-wrap' }}>{msg.text}</div>
+                    </div>
+                  )}
 
                   {msg.suggestions && msg.suggestions.length > 0 && (
                     <div className="suggestions-container">
@@ -704,7 +708,7 @@ export function VoiceWorkspace({ onNavigate }: VoiceWorkspaceProps) {
                     </div>
                   )}
 
-                  <div className="timestamp">{msg.timestamp}</div>
+                  {msg.text && <div className="timestamp">{msg.timestamp}</div>}
                 </div>
               </div>
             ))}
