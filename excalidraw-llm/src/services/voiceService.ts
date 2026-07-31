@@ -177,63 +177,92 @@ export function stopAudioResponse(): void {
   activeSpeechUtterance = null;
 }
 
-/**
- * Plays base64 PCM audio using Web Audio API AudioContext
- */
-function playPcmAudioData(base64Pcm: string, sampleRate = 24000, onEnd?: () => void): Promise<boolean> {
-  return new Promise((resolve) => {
-    try {
-      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      const audioCtx = new AudioCtx({ sampleRate });
+class StreamingAudioPlayer {
+  private audioCtx: AudioContext | null = null;
+  private nextPlaybackTime = 0;
+  private sampleRate = 24000;
+  private onEnd?: () => void;
+  private activeNodesCount = 0;
+  private isGenerationComplete = false;
 
+  constructor(sampleRate = 24000, onEnd?: () => void) {
+    this.sampleRate = sampleRate;
+    this.onEnd = onEnd;
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    this.audioCtx = new AudioCtx({ sampleRate });
+    this.nextPlaybackTime = this.audioCtx.currentTime;
+  }
+
+  public feed(base64Pcm: string) {
+    if (!this.audioCtx || this.audioCtx.state === 'closed') return;
+
+    try {
       const binaryString = atob(base64Pcm);
       const len = binaryString.length;
       const pcm16 = new Int16Array(len / 2);
       const dataView = new DataView(new Uint8Array(len).map((_, i) => binaryString.charCodeAt(i)).buffer);
       for (let i = 0; i < pcm16.length; i++) {
-        pcm16[i] = dataView.getInt16(i * 2, true); // Little endian PCM 16-bit
+        pcm16[i] = dataView.getInt16(i * 2, true);
       }
 
       const float32 = new Float32Array(pcm16.length);
       for (let i = 0; i < pcm16.length; i++) {
-        float32[i] = pcm16[i] / 32768; // Normalize Int16 to Float32 [-1.0, 1.0]
+        float32[i] = pcm16[i] / 32768;
       }
 
-      const audioBuffer = audioCtx.createBuffer(1, float32.length, sampleRate);
+      const audioBuffer = this.audioCtx.createBuffer(1, float32.length, this.sampleRate);
       audioBuffer.getChannelData(0).set(float32);
 
-      const source = audioCtx.createBufferSource();
+      const source = this.audioCtx.createBufferSource();
       source.buffer = audioBuffer;
-      source.connect(audioCtx.destination);
+      source.connect(this.audioCtx.destination);
 
+      const now = this.audioCtx.currentTime;
+      const startTime = Math.max(now, this.nextPlaybackTime);
+      
+      this.activeNodesCount++;
       source.onended = () => {
-        try {
-          audioCtx.close();
-        } catch {}
-        activeAudioSourceNode = null;
-        activeAudioContext = null;
-        onEnd?.();
-        resolve(true);
+        this.activeNodesCount--;
+        this.checkCompletion();
       };
 
-      if (audioCtx.state === 'suspended') {
-        audioCtx.resume();
+      if (this.audioCtx.state === 'suspended') {
+        this.audioCtx.resume();
       }
 
-      source.start(0);
-      activeAudioSourceNode = source;
-      activeAudioContext = audioCtx;
+      source.start(startTime);
+      this.nextPlaybackTime = startTime + audioBuffer.duration;
     } catch (e) {
-      console.warn('Web Audio API playback failed:', e);
-      resolve(false);
+      console.warn('[StreamingAudioPlayer] Error feeding chunk:', e);
     }
-  });
+  }
+
+  public signalGenerationComplete() {
+    this.isGenerationComplete = true;
+    this.checkCompletion();
+  }
+
+  private checkCompletion() {
+    if (this.isGenerationComplete && this.activeNodesCount === 0) {
+      this.close();
+      this.onEnd?.();
+    }
+  }
+
+  public close() {
+    if (this.audioCtx && this.audioCtx.state !== 'closed') {
+      try {
+        this.audioCtx.close();
+      } catch {}
+    }
+    this.audioCtx = null;
+  }
 }
 
 /**
- * Opens a Gemini Live API WebSocket session, sends text, collects PCM audio
- * chunks until turnComplete, then plays them via the Web Audio API.
- * Returns true if audio was successfully played, false otherwise.
+ * Opens a Gemini Live API WebSocket session, sends text, and plays PCM audio
+ * chunks immediately as they stream back from the server.
+ * Returns true if audio was successfully streamed, false otherwise.
  */
 async function speakWithLiveApi(
   text: string,
@@ -242,10 +271,10 @@ async function speakWithLiveApi(
   onEnd?: () => void
 ): Promise<boolean> {
   try {
-    console.log(`[Native Audio] Live API → ${liveModel}`);
+    console.log(`[Native Audio] Live API (Streaming) → ${liveModel}`);
     const ai = new GoogleGenAI({ apiKey, apiVersion: 'v1alpha' });
-    const audioChunks: Uint8Array[] = [];
-    let resolved = false;
+    let player: StreamingAudioPlayer | null = null;
+    let hasAudio = false;
 
     await new Promise<void>((resolve, reject) => {
       ai.live.connect({
@@ -259,9 +288,12 @@ async function speakWithLiveApi(
         callbacks: {
           onopen: () => {
             console.log(`[Native Audio] Live API WebSocket opened for model ${liveModel}`);
+            player = new StreamingAudioPlayer(24000, () => {
+              onEnd?.();
+              resolve();
+            });
           },
           onmessage: (msg: unknown) => {
-            console.log(`[Native Audio] Live API Raw message:`, JSON.stringify(msg));
             const m = msg as {
               serverContent?: {
                 modelTurn?: { parts?: Array<{ inlineData?: { data?: string } }> };
@@ -270,26 +302,20 @@ async function speakWithLiveApi(
             };
             for (const part of m.serverContent?.modelTurn?.parts ?? []) {
               if (part.inlineData?.data) {
-                console.log(`[Native Audio] Live API received chunk, length: ${part.inlineData.data.length}`);
-                const raw = atob(part.inlineData.data);
-                const bytes = new Uint8Array(raw.length);
-                for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
-                audioChunks.push(bytes);
+                hasAudio = true;
+                player?.feed(part.inlineData.data);
               }
             }
-            if (m.serverContent?.turnComplete && !resolved) {
-              console.log(`[Native Audio] Live API turnComplete signaled`);
-              resolved = true;
-              resolve();
+            if (m.serverContent?.turnComplete) {
+              player?.signalGenerationComplete();
             }
           },
           onerror: (e: unknown) => {
-            console.error(`[Native Audio] Live API error event:`, e);
-            if (!resolved) { resolved = true; reject(e); }
+            player?.close();
+            reject(e);
           },
-          onclose: (e: unknown) => {
-            console.log(`[Native Audio] Live API connection closed:`, e);
-            if (!resolved) { resolved = true; resolve(); }
+          onclose: () => {
+            player?.signalGenerationComplete();
           }
         }
       }).then((session) => {
@@ -298,31 +324,12 @@ async function speakWithLiveApi(
           turnComplete: true
         });
       }).catch((e) => {
-        if (!resolved) { resolved = true; reject(e); }
+        player?.close();
+        reject(e);
       });
     });
 
-    if (audioChunks.length === 0) {
-      console.warn(`[Native Audio] Live API (${liveModel}) returned no audio chunks`);
-      return false;
-    }
-
-    // Merge all PCM chunks into one Uint8Array
-    const total = audioChunks.reduce((n, c) => n + c.length, 0);
-    const merged = new Uint8Array(total);
-    let offset = 0;
-    for (const chunk of audioChunks) { merged.set(chunk, offset); offset += chunk.length; }
-
-    // Convert merged bytes back to base64 for playPcmAudioData
-    let bin = '';
-    for (let i = 0; i < merged.length; i++) bin += String.fromCharCode(merged[i]);
-    const b64 = btoa(bin);
-
-    const played = await playPcmAudioData(b64, 24000, onEnd);
-    if (played) {
-      console.log(`[Native Audio] ✅ Live API played audio (${liveModel})`);
-    }
-    return played;
+    return hasAudio;
   } catch (e) {
     console.warn(`[Native Audio] Live API ${liveModel} failed:`, e);
     return false;
