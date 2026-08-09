@@ -343,8 +343,8 @@ async function speakWithLiveApi(
  * Last resort: browser SpeechSynthesis (only if browserSpeechEnabled = true)
  */
 export async function speakNativeAudioResponse(
-  _prompt: string,
-  chatReply: string,
+  prompt: string,
+  chatReply?: string,
   apiKey?: string,
   _modelName: string = 'gemini-live-2.5-flash-native-audio',
   onStart?: () => void,
@@ -356,14 +356,17 @@ export async function speakNativeAudioResponse(
   unlockAudioContext();
   onStart?.();
 
-  const spokenInstruction = `You are a voice teaching assistant. Speak the following reply aloud in 5 to 10 natural, engaging sentences: ${chatReply}`;
+  const textToSpeak = chatReply ? chatReply.trim() : '';
+  const spokenInstruction = textToSpeak
+    ? `You are a voice teaching assistant. Speak the following reply aloud in 10 to 15 natural, engaging sentences about : ${textToSpeak}`
+    : prompt;
 
   if (!apiKey || !apiKey.trim()) {
     console.warn('[Native Audio] No Gemini API key — skipping Live API.');
-    if (browserSpeechEnabled) {
-      fallbackSpeechSynthesis(chatReply, onEnd, onError);
+    if (browserSpeechEnabled && textToSpeak) {
+      fallbackSpeechSynthesis(textToSpeak, onEnd, onError);
     } else {
-      console.log('[Native Audio] Browser speech disabled in settings. Silent.');
+      console.log('[Native Audio] Browser speech disabled in settings or no chat text. Silent.');
       onEnd?.();
     }
     return;
@@ -377,12 +380,12 @@ export async function speakNativeAudioResponse(
     if (played) return;
   }
 
-  // 🥉 LAST RESORT: Browser speech (only if enabled in settings)
-  if (browserSpeechEnabled) {
+  // 🥉 LAST RESORT: Browser speech (only if enabled in settings and chat text exists)
+  if (browserSpeechEnabled && textToSpeak) {
     console.log('[Native Audio] All Gemini Live paths failed — using browser speech synthesis.');
-    fallbackSpeechSynthesis(chatReply, onEnd, onError);
+    fallbackSpeechSynthesis(textToSpeak, onEnd, onError);
   } else {
-    console.log('[Native Audio] All Gemini Live paths failed. Browser speech disabled in settings. Silent.');
+    console.log('[Native Audio] All Gemini Live paths failed. Silent.');
     onEnd?.();
   }
 }

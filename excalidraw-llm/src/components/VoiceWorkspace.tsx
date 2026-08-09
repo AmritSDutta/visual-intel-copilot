@@ -364,16 +364,38 @@ export function VoiceWorkspace({ onNavigate }: VoiceWorkspaceProps) {
     }
 
     setIsLoading(true);
-    setVoiceStatus('Generating diagram and native audio answer...');
+    setVoiceStatus('⚡ Live Audio streaming & Diagram generating...');
 
+    // 🎙️ Track 1: Trigger Live Audio Stream in Parallel (Non-blocking)
+    if (!isMuted && provider === 'gemini' && apiKey.trim()) {
+      speakNativeAudioResponse(
+        query,
+        undefined, // Direct prompt mode for real-time Live API audio
+        apiKey,
+        modelName || GEMINI_LIVE_MODELS[0].id,
+        () => setIsSpeaking(true),
+        () => {
+          setIsSpeaking(false);
+          setVoiceStatus('Ready for voice prompt');
+        },
+        (err) => {
+          console.warn('Voice error:', err);
+          setIsSpeaking(false);
+          setVoiceStatus('Ready for voice prompt');
+        },
+        browserSpeechEnabled
+      );
+    }
+
+    // 🎨 Track 2: Diagram & Text Generation Track (Parallel)
     try {
       let result: { chatReply: string; elements: unknown[] };
 
       // Normal models continue generating diagrams as usual
       if (provider === 'ollama') {
-        result = await generateDiagramWithOllama(query, ollamaEndpoint, ollamaModel, ollamaApiKey, rawLibraryItems);
+        result = await generateDiagramWithOllama(`explain with diagram, ${query}`, ollamaEndpoint, ollamaModel, ollamaApiKey, rawLibraryItems);
       } else {
-        result = await generateDiagramFromPrompt(query, apiKey, modelName || 'gemini-2.5-flash-native-audio-latest', rawLibraryItems);
+        result = await generateDiagramFromPrompt(`explain with diagram, ${query}`, apiKey, modelName || 'gemini-2.5-flash', rawLibraryItems);
       }
 
       if (excalidrawAPI) {
@@ -418,27 +440,7 @@ export function VoiceWorkspace({ onNavigate }: VoiceWorkspaceProps) {
       };
       setMessages((prev) => [...prev, aiReply]);
 
-      // Native audio model answers aloud!
-      if (!isMuted) {
-        setVoiceStatus('🤖 Native Audio Model speaking response...');
-        speakNativeAudioResponse(
-          query,
-          result.chatReply,
-          apiKey,
-          modelName || GEMINI_LIVE_MODELS[0].id,
-          () => setIsSpeaking(true),
-          () => {
-            setIsSpeaking(false);
-            setVoiceStatus('Ready for voice prompt');
-          },
-          (err) => {
-            console.warn('Voice error:', err);
-            setIsSpeaking(false);
-            setVoiceStatus('Ready for voice prompt');
-          },
-          browserSpeechEnabled
-        );
-      } else {
+      if (isMuted) {
         setVoiceStatus('Ready for voice prompt (Muted)');
       }
     } catch (error: unknown) {
