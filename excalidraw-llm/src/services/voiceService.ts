@@ -356,7 +356,7 @@ export async function speakNativeAudioResponse(
   unlockAudioContext();
   onStart?.();
 
-  const spokenInstruction = `You are a voice assistant. Speak the following reply aloud in 2 to 4 natural, engaging sentences: ${chatReply}`;
+  const spokenInstruction = `You are a voice teaching assistant. Speak the following reply aloud in 5 to 10 natural, engaging sentences: ${chatReply}`;
 
   if (!apiKey || !apiKey.trim()) {
     console.warn('[Native Audio] No Gemini API key — skipping Live API.');
