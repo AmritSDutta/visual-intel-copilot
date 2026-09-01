@@ -12,10 +12,9 @@ An intelligent, interactive diagramming assistant built with **React 19**, **Typ
 - **Left Panel (70%)**: Full-featured Excalidraw editor canvas.
 - **Right Panel (30%)**: Sleek dark-mode AI Chat UI for issuing diagram requests and managing settings.
 
-### 2. 🦙 Ollama Integration (Local & Cloud Models)
-- Connects to a local Ollama server (`http://localhost:11434`) or the Ollama cloud host (`https://ollama.com`) with optional Bearer API key.
-- **Zero data leak option**: generate system architecture and flow diagrams completely offline.
-- Automatic retry through the built-in `/api/proxy` relay when direct browser calls are blocked by CORS/mixed-content policies.
+### 2. 🦙 Ollama Integration (Cloud & Remote Models)
+- Connects to the Ollama cloud host (`https://ollama.com`) or custom remote cloud/proxy endpoints with optional Bearer API key.
+- Automatic routing through the built-in `/api/proxy` relay when direct browser calls are blocked by CORS/mixed-content policies.
 
 ### 3. ✨ Gemini Cloud API Integration (`@google/genai` SDK)
 - Supports `gemini-3.1-flash-lite` (default) with automatic fallback through candidate models on failure.
@@ -102,31 +101,8 @@ npm run dev
    ```
 4. Restart the dev server.
 
-### 4. Running Local Ollama
-To enable browser requests to a local Ollama server, configure `OLLAMA_ORIGINS`. Official details: [Ollama Web Origins FAQ](https://docs.ollama.com/faq#how-can-i-allow-additional-web-origins-to-access-ollama).
-
-#### Quick Test (PowerShell Session)
-```powershell
-$env:OLLAMA_ORIGINS="*"
-ollama serve
-
-# Pull the default model (in a separate terminal)
-ollama pull gemma4:31b-cloud
-```
-
-#### Permanent Windows Environment Variable Setup
-1. Press `Win + R`, type `sysdm.cpl`, and press **Enter**.
-2. Select the **Advanced** tab and click **Environment Variables...**.
-3. Under **User variables**, find and select `OLLAMA_ORIGINS` (or click **New...** if it doesn't exist).
-4. Set the value to:
-   ```text
-   http://localhost:*,https://inquisitive.amritai.org
-   ```
-5. Click **OK** on all dialog boxes.
-6. Right-click the Ollama icon in your system tray and select **Quit**.
-7. Relaunch Ollama from your Start menu.
-
-> 💡 Cloud Ollama models (e.g. `gemma4:31b-cloud`) resolve through your **local** Ollama server — keep the endpoint at `http://localhost:11434` and just set the cloud model name. Direct browser calls to `https://ollama.com` are blocked by CORS; the app automatically retries them through its `/api/proxy` relay (a Cloudflare Pages function in production, a Vite dev middleware locally).
+### 4. Running with Ollama
+The app connects to **Ollama Cloud (`https://ollama.com`)** by default. Calls to `https://ollama.com` are securely relayed through the `/api/proxy` backend (a Cloudflare Pages function in production, and a Vite dev middleware locally). Custom remote proxy/server URLs can also be configured in the in-app Settings (⚙️) panel.
 
 ---
 

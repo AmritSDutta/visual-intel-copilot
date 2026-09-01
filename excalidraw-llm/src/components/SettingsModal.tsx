@@ -69,9 +69,7 @@ export function SettingsModal({
                 className="model-select"
                 style={{ marginBottom: '10px' }}
                 value={
-                  ollamaEndpoint === 'http://localhost:11434' || ollamaEndpoint === 'http://localhost:11434/'
-                    ? 'http://localhost:11434'
-                    : ollamaEndpoint === 'https://ollama.com' || ollamaEndpoint === 'https://ollama.com/'
+                  ollamaEndpoint === 'https://ollama.com' || ollamaEndpoint === 'https://ollama.com/'
                     ? 'https://ollama.com'
                     : 'custom'
                 }
@@ -82,8 +80,7 @@ export function SettingsModal({
                   }
                 }}
               >
-                <option value="http://localhost:11434">🦙 Ollama Localhost (http://localhost:11434)</option>
-                <option value="https://ollama.com">☁️ Ollama Cloud (https://ollama.com)</option>
+                <option value="https://ollama.com">☁️ Ollama Cloud API (https://ollama.com)</option>
                 <option value="custom">⚙️ Custom Server / Cloud Proxy URL...</option>
               </select>
 
@@ -92,7 +89,7 @@ export function SettingsModal({
                 type="text"
                 value={ollamaEndpoint}
                 onChange={(e) => setOllamaEndpoint(e.target.value)}
-                placeholder="http://localhost:11434"
+                placeholder="https://ollama.com"
               />
 
               <label style={{ marginTop: '12px' }}>Ollama API Key (Optional for Cloud/Proxies)</label>
@@ -122,7 +119,7 @@ export function SettingsModal({
                 placeholder="Or enter custom model name..."
               />
               <div className="setting-hint">
-                For local Ollama, ensure CORS is enabled: <code>$env:OLLAMA_ORIGINS="*"</code>
+                Cloud calls to <code>https://ollama.com</code> are securely routed via the <code>/api/proxy</code> backend.
               </div>
             </div>
           ) : (

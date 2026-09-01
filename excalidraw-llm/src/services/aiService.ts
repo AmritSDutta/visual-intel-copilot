@@ -193,12 +193,12 @@ export async function generateDiagramFromPrompt(
 
 export async function generateDiagramWithOllama(
   prompt: string,
-  endpoint: string = 'http://localhost:11434',
+  endpoint: string = 'https://ollama.com',
   modelName: string = 'gemma4:31b-cloud',
   apiKey: string = '',
   rawLibraryItems: any[] = []
 ): Promise<AIDiagramResult> {
-  const cleanEndpoint = (endpoint.trim() || 'http://localhost:11434').replace(/\/+$/, '');
+  const cleanEndpoint = (endpoint.trim() || 'https://ollama.com').replace(/\/+$/, '');
   const cleanModel = modelName.trim() || 'gemma4:31b-cloud';
   const systemInstruction = getSystemInstruction(rawLibraryItems);
   const url = `${cleanEndpoint}/api/chat`;
@@ -242,11 +242,10 @@ export async function generateDiagramWithOllama(
     } catch (proxyErr: any) {
       if (cleanEndpoint.startsWith('https://ollama.com')) {
         throw new Error(
-          `Direct browser calls to https://ollama.com are blocked by browser CORS. ` +
-          `To use cloud models, keep Endpoint set to http://localhost:11434 and specify cloud model name (e.g. gemma4:31b-cloud).`
+          'Failed to reach Ollama Cloud API. Please ensure your Ollama API Key / Bearer token is provided if required, or check proxy connectivity.'
         );
       }
-      throw new Error(`Unable to connect to Ollama host at ${cleanEndpoint}. Please verify URL, API key, or CORS settings.`);
+      throw new Error(`Unable to connect to Ollama host at ${cleanEndpoint}. Please verify the URL, API key, and network connectivity.`);
     }
   }
 

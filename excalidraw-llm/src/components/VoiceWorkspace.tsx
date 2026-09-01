@@ -818,9 +818,7 @@ export function VoiceWorkspace({ onNavigate }: VoiceWorkspaceProps) {
                     className="model-select"
                     style={{ marginBottom: '10px' }}
                     value={
-                      ollamaEndpoint === 'http://localhost:11434' || ollamaEndpoint === 'http://localhost:11434/'
-                        ? 'http://localhost:11434'
-                        : ollamaEndpoint === 'https://ollama.com' || ollamaEndpoint === 'https://ollama.com/'
+                      ollamaEndpoint === 'https://ollama.com' || ollamaEndpoint === 'https://ollama.com/'
                         ? 'https://ollama.com'
                         : 'custom'
                     }
@@ -831,8 +829,7 @@ export function VoiceWorkspace({ onNavigate }: VoiceWorkspaceProps) {
                       }
                     }}
                   >
-                    <option value="http://localhost:11434">🦙 Ollama Localhost (http://localhost:11434)</option>
-                    <option value="https://ollama.com">☁️ Ollama Cloud (https://ollama.com)</option>
+                    <option value="https://ollama.com">☁️ Ollama Cloud API (https://ollama.com)</option>
                     <option value="custom">⚙️ Custom Server / Cloud Proxy URL...</option>
                   </select>
 
@@ -841,7 +838,7 @@ export function VoiceWorkspace({ onNavigate }: VoiceWorkspaceProps) {
                     type="text"
                     value={ollamaEndpoint}
                     onChange={(e) => setOllamaEndpoint(e.target.value)}
-                    placeholder="http://localhost:11434"
+                    placeholder="https://ollama.com"
                   />
 
                   <label style={{ marginTop: '12px' }}>Ollama API Key (Optional for Cloud/Proxies)</label>
