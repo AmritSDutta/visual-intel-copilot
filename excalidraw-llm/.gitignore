@@ -7,21 +7,37 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+dist-ssr/
+coverage/
 *.local
+
+# Environment variables (keep the example template, ignore real secrets)
+.env
+.env.*
+!.env.example
+
+# Cache
+.vite/
 
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
 .idea
 .DS_Store
+Thumbs.db
+Desktop.ini
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
-graphify-out/*
-AGENTS.md
 
+# Project-specific
+graphify-out/*
+CLAUDE.md
+AGENTS.md
