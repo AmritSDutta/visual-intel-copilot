@@ -21,7 +21,7 @@ An intelligent, interactive diagramming assistant built with **React 19**, **Typ
 - **Canvas-aware editing**: the current canvas is attached to the request as a PNG snapshot (`inlineData`), so Gemini can *edit and extend* an existing diagram — not just create new ones.
 
 ### 4. 🎙️ Voice Mode (`/voice`)
-- A dedicated voice workspace route with **Gemini Live native audio** models (`gemini-live-2.5-flash-native-audio` and friends) plus a **Web Speech API** fallback (speech recognition + speech synthesis).
+- A dedicated voice workspace route with **Gemini Live native audio** models (`gemini-2.5-flash-native-audio-preview-12-2025` and `gemini-3.1-flash-live-preview`) plus a **Web Speech API** fallback (speech recognition + speech synthesis).
 - Live mic indicator, mute toggle, and audio signal visualization in the header.
 
 ### 5. 🔐 Supabase Authentication (Google OAuth)

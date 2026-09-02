@@ -16,6 +16,7 @@ import {
   unlockAudioContext,
   isSpeechRecognitionSupported,
   GEMINI_LIVE_MODELS,
+  SUPPORTED_MODEL_IDS,
   type SpeechRecognitionController
 } from '../services/voiceService';
 
@@ -70,9 +71,14 @@ export function VoiceWorkspace({ onNavigate }: VoiceWorkspaceProps) {
   const [apiKey, setApiKey] = useState(
     () => sessionStorage.getItem('GEMINI_API_KEY') || ''
   );
-  const [modelName, setModelName] = useState(
-    () => sessionStorage.getItem('GEMINI_MODEL') || GEMINI_LIVE_MODELS[0].id
-  );
+  const [modelName, setModelName] = useState<string>(() => {
+    const saved = sessionStorage.getItem('GEMINI_MODEL');
+    if (saved && (SUPPORTED_MODEL_IDS as readonly string[]).includes(saved)) {
+      return saved;
+    }
+    sessionStorage.setItem('GEMINI_MODEL', SUPPORTED_MODEL_IDS[0]);
+    return SUPPORTED_MODEL_IDS[0];
+  });
   const [browserSpeechEnabled, setBrowserSpeechEnabled] = useState(
     () => sessionStorage.getItem('BROWSER_SPEECH_FALLBACK') === 'true'
   );
@@ -372,7 +378,7 @@ export function VoiceWorkspace({ onNavigate }: VoiceWorkspaceProps) {
         query,
         query || '', // Direct prompt mode for real-time Live API audio
         apiKey,
-        modelName || GEMINI_LIVE_MODELS[0].id,
+        modelName || SUPPORTED_MODEL_IDS[0],
         () => setIsSpeaking(true),
         () => {
           setIsSpeaking(false);
@@ -914,7 +920,7 @@ export function VoiceWorkspace({ onNavigate }: VoiceWorkspaceProps) {
                     type="text"
                     value={modelName}
                     onChange={(e) => setModelName(e.target.value)}
-                    placeholder={GEMINI_LIVE_MODELS[0].id}
+                    placeholder={SUPPORTED_MODEL_IDS[0]}
                   />
                   <div className="setting-hint">
                     Live API model for native voice audio.

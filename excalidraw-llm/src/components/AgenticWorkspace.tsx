@@ -23,6 +23,7 @@ import {
   stopAudioResponse,
   unlockAudioContext,
   GEMINI_LIVE_MODELS,
+  SUPPORTED_MODEL_IDS,
   STUDIO_VOICES
 } from '../services/voiceService';
 
@@ -102,9 +103,14 @@ export function AgenticWorkspace({ onNavigate }: AgenticWorkspaceProps) {
     return MISTRAL_MODELS[0].id;
   });
 
-  const [modelName, setModelName] = useState<string>(
-    () => sessionStorage.getItem('GEMINI_MODEL') || GEMINI_LIVE_MODELS[0].id
-  );
+  const [modelName, setModelName] = useState<string>(() => {
+    const saved = sessionStorage.getItem('GEMINI_MODEL');
+    if (saved && (SUPPORTED_MODEL_IDS as readonly string[]).includes(saved)) {
+      return saved;
+    }
+    sessionStorage.setItem('GEMINI_MODEL', SUPPORTED_MODEL_IDS[0]);
+    return SUPPORTED_MODEL_IDS[0];
+  });
   const [browserSpeechEnabled, setBrowserSpeechEnabled] = useState<boolean>(
     () => sessionStorage.getItem('BROWSER_SPEECH_FALLBACK') !== 'false'
   );
@@ -608,7 +614,7 @@ export function AgenticWorkspace({ onNavigate }: AgenticWorkspaceProps) {
       '',
       text,
       apiKey,
-      modelName || GEMINI_LIVE_MODELS[0].id,
+      modelName || SUPPORTED_MODEL_IDS[0],
       () => setIsSpeaking(true),
       () => setIsSpeaking(false),
       undefined,
@@ -1135,7 +1141,7 @@ export function AgenticWorkspace({ onNavigate }: AgenticWorkspaceProps) {
                     type="text"
                     value={modelName}
                     onChange={(e) => setModelName(e.target.value)}
-                    placeholder={GEMINI_LIVE_MODELS[0].id}
+                    placeholder={SUPPORTED_MODEL_IDS[0]}
                   />
                   <div className="setting-hint">
                     Live API model for native voice audio orchestration.

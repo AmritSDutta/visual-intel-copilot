@@ -172,11 +172,13 @@ export class GeminiLiveSession {
       },
       onmessage: (msg: LiveServerMessage) => this.handleMessage(msg),
       onerror: (err: unknown) => {
-        appLogger.error('LIVE_SESSION', `Session error: ${String(err)}`);
+        appLogger.error('LIVE_SESSION', `Session error on ${model}: ${String(err)}`);
         this.callbacks.onError?.(err instanceof Error ? err : new Error(String(err)));
       },
-      onclose: () => {
-        appLogger.info('LIVE_SESSION', `WebSocket closed (${model})`);
+      onclose: (e?: any) => {
+        const code = e?.code ?? 'unknown';
+        const reason = e?.reason || 'No reason provided';
+        appLogger.info('LIVE_SESSION', `WebSocket closed (${model}) [code: ${code}, reason: "${reason}"]`);
         const wasActive = this._isActive;
         void this.stop();
         if (wasActive) {

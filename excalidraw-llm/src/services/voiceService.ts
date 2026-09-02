@@ -1,9 +1,27 @@
 import { GoogleGenAI, Modality } from '@google/genai';
 
+/**
+ * ============================================================================
+ * TRUTH: CANONICAL GEMINI MULTIMODAL LIVE API SUPPORTED MODEL IDS.
+ * NEVER CHANGE OR MODIFY THESE IDS.
+ * ============================================================================
+ */
+export const SUPPORTED_MODEL_IDS = [
+  'gemini-2.5-flash-native-audio-preview-12-2025',
+  'gemini-3.1-flash-live-preview',
+] as const;
+
+export type SupportedLiveModelId = (typeof SUPPORTED_MODEL_IDS)[number];
+
 export const GEMINI_LIVE_MODELS = [
-  { id: 'gemini-live-2.5-flash-native-audio', label: 'gemini-live-2.5-flash-native-audio (Native Audio ⭐)' },
-  { id: 'gemini-2.5-flash-native-audio-preview-12-2025', label: 'gemini-2.5-flash-native-audio-preview-12-2025 (Native Audio Alt)' },
-  { id: 'gemini-3-flash-live', label: 'gemini-3-flash-live (Fast Live)' }
+  {
+    id: SUPPORTED_MODEL_IDS[0],
+    label: `${SUPPORTED_MODEL_IDS[0]} (Native Audio ⭐)`,
+  },
+  {
+    id: SUPPORTED_MODEL_IDS[1],
+    label: `${SUPPORTED_MODEL_IDS[1]} (Live Preview)`,
+  },
 ];
 
 export interface StudioVoiceOption {
@@ -325,10 +343,14 @@ async function speakWithLiveApi(
             }
           },
           onerror: (e: unknown) => {
+            console.warn(`[Native Audio] Live API error on ${liveModel}:`, e);
             player?.close();
             reject(e);
           },
-          onclose: () => {
+          onclose: (e?: any) => {
+            const code = e?.code ?? 'unknown';
+            const reason = e?.reason || 'No reason provided';
+            console.log(`[Native Audio] Live API WebSocket closed for model ${liveModel} [code: ${code}, reason: "${reason}"]`);
             player?.signalGenerationComplete();
           }
         }
@@ -352,15 +374,15 @@ async function speakWithLiveApi(
 
 /**
  * Generate native audio response using Gemini Live API.
- * Primary:  gemini-live-2.5-flash-native-audio
- * Fallback: gemini-3-flash-live
+ * Primary:  gemini-2.5-flash-native-audio-preview-12-2025
+ * Fallback: gemini-3.1-flash-live-preview
  * Last resort: browser SpeechSynthesis (only if browserSpeechEnabled = true)
  */
 export async function speakNativeAudioResponse(
   prompt: string,
   chatReply?: string,
   apiKey?: string,
-  _modelName: string = 'gemini-live-2.5-flash-native-audio',
+  _modelName: string = SUPPORTED_MODEL_IDS[0],
   onStart?: () => void,
   onEnd?: () => void,
   onError?: (err: string) => void,

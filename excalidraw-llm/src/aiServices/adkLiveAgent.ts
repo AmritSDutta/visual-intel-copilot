@@ -13,7 +13,7 @@ import { createMultiAgentTools } from './agentTools';
 import { GeminiLiveSession } from './liveSession';
 import type { LiveToolCall } from './liveSession';
 import { getLiveAgentSystemInstruction } from './prompts';
-import { GEMINI_LIVE_MODELS } from '../services/voiceService';
+import { GEMINI_LIVE_MODELS, SUPPORTED_MODEL_IDS } from '../services/voiceService';
 
 export const START_GREETING_MESSAGE = "Hello! I am your Live Architecture companion. What system would you like to design today? You can also ask me to check your chat notes.";
 
@@ -139,7 +139,10 @@ export class AdkLiveAgent {
       throw new Error('A Gemini API key is required for the Agentic workspace (it drives the live session). Please add it in Settings (⚙️).');
     }
 
+    const chosenModel = this.config.geminiModel || SUPPORTED_MODEL_IDS[0];
     const models = Array.from(new Set([
+      chosenModel,
+      ...SUPPORTED_MODEL_IDS,
       ...GEMINI_LIVE_MODELS.map((m) => m.id)
     ]));
 
