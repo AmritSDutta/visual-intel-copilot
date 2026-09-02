@@ -155,8 +155,6 @@ export class AdkLiveAgent {
       callbacks: {
         onOpen: () => {
           this.setState('listening');
-          // Hidden control turn — the persona makes the model speak its greeting now.
-          this.liveSession?.sendText('(Session just started. Deliver your greeting now, exactly as instructed.)');
         },
         onUserTranscript: (text) => {
           this.messages.push({
@@ -235,6 +233,47 @@ export class AdkLiveAgent {
     this.liveSession.sendText(trimmed);
   }
 
+  private sanitizeToolResponseForLiveModel(
+    _toolName: string,
+    result: any,
+    args: Record<string, any>
+  ): Record<string, any> {
+    if (!result || typeof result !== 'object') {
+      return { status: 'success' };
+    }
+    if (result.error) {
+      return { status: 'error', error: String(result.error) };
+    }
+    // 1. Diagram results: never send raw vector arrays to the live audio session
+    if (Array.isArray(result.elements)) {
+      const count = result.elements.length;
+      return {
+        status: 'success',
+        action: 'diagram_rendered_on_canvas',
+        summary: `Successfully generated and rendered ${count} architectural elements on the Excalidraw canvas for "${args.prompt || 'the requested architecture'}".`,
+        componentCount: count
+      };
+    }
+    // 2. Chat text breakdown results: summarize so the live model doesn't get flooded with massive markdown
+    if (typeof result.chatReply === 'string' && result.chatReply.trim()) {
+      return {
+        status: 'success',
+        action: 'notes_written_to_chat',
+        summary: `Detailed technical architecture breakdown has been written directly into the chat notes panel for "${args.prompt || 'the request'}".`
+      };
+    }
+    // 3. Canvas state inspection results: provide concise summary
+    if (Array.isArray(result.nodes) || Array.isArray(result.canvasElements)) {
+      const count = result.nodes?.length ?? result.canvasElements?.length ?? 0;
+      return {
+        status: 'success',
+        summary: result.summary || `Canvas contains ${count} elements.`,
+        topologyGraph: result.topologyGraph || undefined
+      };
+    }
+    return result;
+  }
+
   // ── tool dispatch (the live model decides when) ───────────
 
   private async handleToolCalls(calls: LiveToolCall[]): Promise<void> {
@@ -267,9 +306,8 @@ export class AdkLiveAgent {
         }
 
         toolsUsed.push({ name: call.name, args: call.args });
-        responses.push({ id: call.id, name: call.name, response: result ?? {} });
 
-        // Diagram tools return { elements } — surface the new canvas to the UI.
+        // 🎨 1. Decoupled Canvas Rendering: Dispatches elements directly to canvas UI thread
         const elements = (result as AIDiagramResult | undefined)?.elements;
         if (Array.isArray(elements) && elements.length > 0) {
           this.callbacks.onDiagramGenerated?.({
@@ -277,17 +315,29 @@ export class AdkLiveAgent {
             elements
           });
         }
-      }
 
-      if (toolsUsed.length > 0) {
-        this.messages.push({
-          id: `msg_${Date.now()}_t`,
-          role: 'assistant',
-          content: `Used tools: ${toolsUsed.map((t) => t.name).join(', ')}`,
-          subagentUsed: '🛠️ Tools',
-          toolCalls: toolsUsed,
-          timestamp: Date.now()
-        });
+        // 📝 2. Decoupled Chat Text Writer: Dispatches rich text directly to chat notes UI
+        const chatReply = (result as { chatReply?: string } | undefined)?.chatReply;
+        if (typeof chatReply === 'string' && chatReply.trim()) {
+          const badge = call.name.includes('groq')
+            ? '⚡ Groq Text Subagent'
+            : call.name.includes('mistral')
+            ? '🦔 Mistral Diagram Subagent'
+            : '🛠️ Subagent';
+
+          this.messages.push({
+            id: `msg_${Date.now()}_text_subagent`,
+            role: 'assistant',
+            content: chatReply.trim(),
+            subagentUsed: badge,
+            timestamp: Date.now()
+          });
+          this.callbacks.onTranscript?.(chatReply.trim(), true, 'agent');
+        }
+
+        // 🎙️ 3. Sanitized Live Tool Response: Clean, lightweight payload prevents audio crash 1007
+        const sanitized = this.sanitizeToolResponseForLiveModel(call.name, result, call.args);
+        responses.push({ id: call.id, name: call.name, response: sanitized });
       }
 
       this.liveSession?.sendToolResponses(responses);

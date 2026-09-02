@@ -54,6 +54,8 @@ function toFunctionDeclarations(tools: AdkTool[]) {
   }));
 }
 
+import { AsyncLock } from './asyncLock';
+
 /**
  * One native bidirectional Gemini Live session:
  * mic PCM in (server VAD), model PCM out (gapless player),
@@ -62,16 +64,20 @@ function toFunctionDeclarations(tools: AdkTool[]) {
 export class GeminiLiveSession {
   private session: Session | null = null;
   private recorder = new PcmAudioRecorder();
-  private player: StreamingAudioPlayer | null = null;
+  private player: StreamingAudioPlayer;
   private callbacks: LiveSessionCallbacks;
   private readonly opts: GeminiLiveSessionOptions;
-  private userTranscriptBuffer = '';
-  private agentTranscriptBuffer = '';
   private _isActive = false;
+  private isToolExecuting = false;
+  private sendLock = new AsyncLock();
 
   constructor(opts: GeminiLiveSessionOptions) {
     this.opts = opts;
     this.callbacks = opts.callbacks ?? {};
+    this.player = new StreamingAudioPlayer(24000, (speaking) => {
+      this.recorder.setDucked(speaking);
+      this.callbacks.onSpeakingChange?.(speaking);
+    });
   }
 
   public get isActive(): boolean {
@@ -89,9 +95,7 @@ export class GeminiLiveSession {
       responseModalities: [Modality.AUDIO],
       speechConfig: {
         voiceConfig: { prebuiltVoiceConfig: { voiceName: this.opts.voiceName || 'Puck' } }
-      },
-      outputAudioTranscription: {},
-      inputAudioTranscription: {}
+      }
     };
 
     let lastError: unknown = null;
@@ -112,9 +116,19 @@ export class GeminiLiveSession {
     }
 
     await this.recorder.start(
-      (base64Pcm) => this.session?.sendRealtimeInput({
-        audio: { data: base64Pcm, mimeType: 'audio/pcm;rate=16000' }
-      }),
+      async (base64Pcm) => {
+        if (!this.isToolExecuting && this.session && this._isActive) {
+          await this.sendLock.runExclusive(async () => {
+            try {
+              this.session?.sendRealtimeInput({
+                media: { data: base64Pcm, mimeType: 'audio/pcm;rate=16000' }
+              });
+            } catch (err) {
+              appLogger.warn('LIVE_SESSION', `Failed to send mic chunk: ${err}`);
+            }
+          });
+        }
+      },
       (level) => this.callbacks.onAudioLevel?.(level)
     );
 
@@ -122,36 +136,48 @@ export class GeminiLiveSession {
   }
 
   /** Typed input from the chat box — the model answers in audio + transcript. */
-  public sendText(text: string): void {
+  public async sendText(text: string): Promise<void> {
     if (!this.session || !this._isActive) {
       throw new Error('Live session is not active.');
     }
-    this.session.sendClientContent({
-      turns: [{ role: 'user', parts: [{ text }] }],
-      turnComplete: true
+    await this.sendLock.runExclusive(async () => {
+      try {
+        this.session?.sendClientContent({
+          turns: [{ role: 'user', parts: [{ text }] }],
+          turnComplete: true
+        });
+      } catch (err) {
+        appLogger.warn('LIVE_SESSION', `Failed to send client content: ${err}`);
+      }
     });
   }
 
   /** Replies to tool calls raised via onToolCalls — required before the model continues. */
-  public sendToolResponses(responses: LiveToolResponse[]): void {
-    this.session?.sendToolResponse({
-      functionResponses: responses.map((r) => ({
-        id: r.id,
-        name: r.name,
-        response: r.response
-      }))
+  public async sendToolResponses(responses: LiveToolResponse[]): Promise<void> {
+    if (!this.session || !this._isActive) return;
+    await this.sendLock.runExclusive(async () => {
+      try {
+        this.session?.sendToolResponse({
+          functionResponses: responses.map((r) => ({
+            id: r.id,
+            name: r.name,
+            response: { result: r.response }
+          }))
+        });
+      } catch (err) {
+        appLogger.warn('LIVE_SESSION', `Failed to send tool response: ${err}`);
+      }
     });
   }
 
   /** Stops mic, closes the socket and the player. Safe to call repeatedly. */
   public async stop(): Promise<void> {
     this._isActive = false;
-    this.userTranscriptBuffer = '';
-    this.agentTranscriptBuffer = '';
+    this.isToolExecuting = false;
     this.callbacks.onSpeakingChange?.(false);
 
     this.recorder.stop();
-    this.closePlayer();
+    this.player.stop();
 
     if (this.session) {
       try {
@@ -192,6 +218,7 @@ export class GeminiLiveSession {
     // 1. Tool calls — hand to the agent, it must reply via sendToolResponses()
     const calls = (msg.toolCall?.functionCalls ?? []).filter((c) => !!c.name);
     if (calls.length > 0) {
+      this.isToolExecuting = true;
       this.callbacks.onToolCalls?.(calls.map((c) => ({
         id: c.id,
         name: c.name as string,
@@ -202,69 +229,27 @@ export class GeminiLiveSession {
 
     const content = msg.serverContent;
 
-    // 2. Barge-in: user interrupted — kill playback immediately
-    //    (typed surface of the SDK doesn't expose `interruption` yet — check the raw shape)
+    // 2. Barge-in: user interrupted — stop playback immediately
     if ((content as { interruption?: unknown } | undefined)?.interruption) {
-      this.closePlayer();
-      this.callbacks.onSpeakingChange?.(false);
-      this.agentTranscriptBuffer = '';
+      this.player.stop();
     }
 
-    // 3. Model audio → gapless playback
+    // 3. Model audio → gapless continuous playback
     if (content?.modelTurn) {
+      this.isToolExecuting = false;
       for (const part of content.modelTurn.parts ?? []) {
         const data = part.inlineData?.data;
         if (data) {
-          if (!this.player) {
-            this.player = new StreamingAudioPlayer(24000, () => {
-              this.callbacks.onSpeakingChange?.(false);
-              this.player = null;
-            });
-          }
-          this.callbacks.onSpeakingChange?.(true);
           this.player.feed(data);
         }
       }
-      const spoken = content.modelTurn.parts?.map((p) => p.text).filter(Boolean).join('') ?? '';
-      if (spoken) {
-        this.agentTranscriptBuffer += spoken;
-        this.callbacks.onAgentTranscript?.(this.agentTranscriptBuffer, false);
-      }
     }
 
-    // 4. Output transcription (what the model actually said) — per-part incremental
-    const outText = content?.outputTranscription?.text;
-    if (outText) {
-      this.agentTranscriptBuffer += outText;
-      this.callbacks.onAgentTranscript?.(this.agentTranscriptBuffer, false);
-    }
-
-    // 5. Input transcription (what the user said) — flushed as one final per turn
-    const inText = content?.inputTranscription?.text;
-    if (inText) {
-      this.userTranscriptBuffer += inText;
-      this.callbacks.onUserSpeech?.(true);
-    }
-
-    // 6. Server VAD turn boundaries
+    // 4. Server VAD turn boundaries
     if (content?.turnComplete) {
-      if (this.userTranscriptBuffer.trim()) {
-        this.callbacks.onUserTranscript?.(this.userTranscriptBuffer.trim());
-        this.userTranscriptBuffer = '';
-      }
-      if (this.agentTranscriptBuffer.trim()) {
-        this.callbacks.onAgentTranscript?.(this.agentTranscriptBuffer.trim(), true);
-        this.agentTranscriptBuffer = '';
-      }
-      this.player?.signalGenerationComplete();
+      this.isToolExecuting = false;
+      this.player.signalGenerationComplete();
       this.callbacks.onUserSpeech?.(false);
-    }
-  }
-
-  private closePlayer(): void {
-    if (this.player) {
-      this.player.close();
-      this.player = null;
     }
   }
 }

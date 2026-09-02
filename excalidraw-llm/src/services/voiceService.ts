@@ -1,4 +1,5 @@
 import { GoogleGenAI, Modality } from '@google/genai';
+import { StreamingAudioPlayer } from '../aiServices/audioUtils';
 
 /**
  * ============================================================================
@@ -206,88 +207,6 @@ export function stopAudioResponse(): void {
     activeAudioContext = null;
   }
   activeSpeechUtterance = null;
-}
-
-class StreamingAudioPlayer {
-  private audioCtx: AudioContext | null = null;
-  private nextPlaybackTime = 0;
-  private sampleRate = 24000;
-  private onEnd?: () => void;
-  private activeNodesCount = 0;
-  private isGenerationComplete = false;
-
-  constructor(sampleRate = 24000, onEnd?: () => void) {
-    this.sampleRate = sampleRate;
-    this.onEnd = onEnd;
-    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-    this.audioCtx = new AudioCtx({ sampleRate });
-    this.nextPlaybackTime = this.audioCtx.currentTime;
-  }
-
-  public feed(base64Pcm: string) {
-    if (!this.audioCtx || this.audioCtx.state === 'closed') return;
-
-    try {
-      const binaryString = atob(base64Pcm);
-      const len = binaryString.length;
-      const pcm16 = new Int16Array(len / 2);
-      const dataView = new DataView(new Uint8Array(len).map((_, i) => binaryString.charCodeAt(i)).buffer);
-      for (let i = 0; i < pcm16.length; i++) {
-        pcm16[i] = dataView.getInt16(i * 2, true);
-      }
-
-      const float32 = new Float32Array(pcm16.length);
-      for (let i = 0; i < pcm16.length; i++) {
-        float32[i] = pcm16[i] / 32768;
-      }
-
-      const audioBuffer = this.audioCtx.createBuffer(1, float32.length, this.sampleRate);
-      audioBuffer.getChannelData(0).set(float32);
-
-      const source = this.audioCtx.createBufferSource();
-      source.buffer = audioBuffer;
-      source.connect(this.audioCtx.destination);
-
-      const now = this.audioCtx.currentTime;
-      const startTime = Math.max(now, this.nextPlaybackTime);
-      
-      this.activeNodesCount++;
-      source.onended = () => {
-        this.activeNodesCount--;
-        this.checkCompletion();
-      };
-
-      if (this.audioCtx.state === 'suspended') {
-        this.audioCtx.resume();
-      }
-
-      source.start(startTime);
-      this.nextPlaybackTime = startTime + audioBuffer.duration;
-    } catch (e) {
-      console.warn('[StreamingAudioPlayer] Error feeding chunk:', e);
-    }
-  }
-
-  public signalGenerationComplete() {
-    this.isGenerationComplete = true;
-    this.checkCompletion();
-  }
-
-  private checkCompletion() {
-    if (this.isGenerationComplete && this.activeNodesCount === 0) {
-      this.close();
-      this.onEnd?.();
-    }
-  }
-
-  public close() {
-    if (this.audioCtx && this.audioCtx.state !== 'closed') {
-      try {
-        this.audioCtx.close();
-      } catch {}
-    }
-    this.audioCtx = null;
-  }
 }
 
 /**
