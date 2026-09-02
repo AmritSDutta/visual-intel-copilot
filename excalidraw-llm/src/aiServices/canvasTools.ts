@@ -1,4 +1,4 @@
-import type { AdkTool, AdkToolExecutionContext, AdkAgentMessage } from '../core/types';
+import type { AdkTool, AdkToolExecutionContext, AdkAgentMessage } from './types';
 
 export interface CanvasNodeInfo {
   id: string;

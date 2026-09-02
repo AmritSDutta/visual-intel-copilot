@@ -6,7 +6,6 @@ import {
   AdkLiveAgent,
   GROQ_MODELS,
   MISTRAL_MODELS,
-  BrowserVAD,
   appLogger,
   type LogEntry,
   type SubagentActivityEvent,
@@ -20,13 +19,11 @@ import { saveCloudSessionTurn, getCloudSessionsSummary, getCloudSessionTurns, de
 import { AppHeader } from './AppHeader';
 import { HistoryModal } from './HistoryModal';
 import {
-  createSpeechRecognizer,
   speakNativeAudioResponse,
   stopAudioResponse,
   unlockAudioContext,
   GEMINI_LIVE_MODELS,
-  STUDIO_VOICES,
-  type SpeechRecognitionController
+  STUDIO_VOICES
 } from '../services/voiceService';
 
 interface Message {
@@ -116,9 +113,6 @@ export function AgenticWorkspace({ onNavigate }: AgenticWorkspaceProps) {
   const [studioVoice, setStudioVoice] = useState<string>(
     () => sessionStorage.getItem('STUDIO_VOICE') || 'Puck'
   );
-  const [autoListen, setAutoListen] = useState<boolean>(
-    () => sessionStorage.getItem('AUTO_LISTEN') !== 'false'
-  );
   const [isVadActive, setIsVadActive] = useState(false);
 
   const [isMuted, setIsMuted] = useState(false);
@@ -136,10 +130,9 @@ export function AgenticWorkspace({ onNavigate }: AgenticWorkspaceProps) {
 
   const [audioLevel, setAudioLevel] = useState<number>(0);
 
-  const recognizerRef = useRef<SpeechRecognitionController | null>(null);
   const liveAgentRef = useRef<AdkLiveAgent | null>(null);
-  const vadRef = useRef<BrowserVAD | null>(null);
-  const isProcessingVoiceRef = useRef<boolean>(false);
+  const streamingAgentMsgIdRef = useRef<string | null>(null);
+  const lastUserTextRef = useRef<string>('');
 
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -196,10 +189,6 @@ export function AgenticWorkspace({ onNavigate }: AgenticWorkspaceProps) {
   }, [studioVoice]);
 
   useEffect(() => {
-    sessionStorage.setItem('AUTO_LISTEN', String(autoListen));
-  }, [autoListen]);
-
-  useEffect(() => {
     sessionStorage.setItem('GEMINI_MODEL', modelName);
   }, [modelName]);
 
@@ -252,6 +241,45 @@ export function AgenticWorkspace({ onNavigate }: AgenticWorkspaceProps) {
     }
   }, [excalidrawAPI, theme]);
 
+  // Streams the live model's spoken transcript into a chat bubble (upsert) + saves the turn.
+  const updateAgentTranscript = useCallback((text: string, isFinal: boolean) => {
+    const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    setMessages((prev) => {
+      const streamId = streamingAgentMsgIdRef.current;
+      if (streamId) {
+        const idx = prev.findIndex((m) => m.id === streamId);
+        if (idx !== -1) {
+          const next = [...prev];
+          next[idx] = { ...next[idx], text };
+          return next;
+        }
+      }
+      const newId = `a_${Date.now()}`;
+      streamingAgentMsgIdRef.current = newId;
+      return [...prev, { id: newId, sender: 'assistant' as const, text, timestamp, isVoiceReply: true }];
+    });
+
+    if (!isFinal) return;
+    streamingAgentMsgIdRef.current = null;
+    setIsLoading(false);
+    setVoiceStatus('🎙️ ON AIR — keep talking, I am listening');
+
+    const prompt = lastUserTextRef.current || '';
+    setTimeout(async () => {
+      const snapshot = await getCanvasSnapshot();
+      const turnRecord: SessionTurnRecord = {
+        session_id: sessionId,
+        turn_id: `turn_${Date.now()}`,
+        user_prompt: prompt,
+        chat_reply: text,
+        image_blob: snapshot || '',
+        created_at: new Date().toISOString()
+      };
+      if (user) saveCloudSessionTurn(user.id, turnRecord).catch(() => {});
+      saveSessionTurn(turnRecord).catch(() => {});
+    }, 500);
+  }, [sessionId, user, getCanvasSnapshot]);
+
   // Memoized Live Agent getter / lazy initializer
   const getOrCreateLiveAgent = useCallback(() => {
     const config = {
@@ -279,16 +307,57 @@ export function AgenticWorkspace({ onNavigate }: AgenticWorkspaceProps) {
     const callbacks = {
       onStateChange: (agentState: AdkAgentState) => {
         setIsSpeaking(agentState === 'speaking');
+        setIsListening(agentState === 'listening');
+        setIsLoading(agentState === 'thinking');
       },
       onSubagentActivity: (ev: SubagentActivityEvent) => {
         setActiveSubagentEvent(ev);
+        setTimeout(() => setActiveSubagentEvent(null), 4000);
+      },
+      onTranscript: (text: string, isFinal: boolean, speaker: 'user' | 'agent') => {
+        if (speaker === 'user') {
+          lastUserTextRef.current = text;
+          setMessages((prev) => [...prev, {
+            id: `u_${Date.now()}`,
+            sender: 'user' as const,
+            text,
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          }]);
+          setVoiceStatus('⚡ Live Agent thinking...');
+        } else {
+          updateAgentTranscript(text, isFinal);
+        }
+      },
+      onDiagramGenerated: () => {
+        // The tool already rendered the canvas; persist the new canvas as a history turn.
+        const prompt = lastUserTextRef.current || 'Diagram request';
+        setTimeout(async () => {
+          const snapshot = await getCanvasSnapshot();
+          const turnRecord: SessionTurnRecord = {
+            session_id: sessionId,
+            turn_id: `turn_canvas_${Date.now()}`,
+            user_prompt: prompt,
+            chat_reply: 'Diagram rendered on canvas.',
+            image_blob: snapshot || '',
+            created_at: new Date().toISOString()
+          };
+          if (user) saveCloudSessionTurn(user.id, turnRecord).catch(() => {});
+          saveSessionTurn(turnRecord).catch(() => {});
+        }, 600);
+      },
+      onAudioLevel: (level: number) => {
+        setAudioLevel(level);
+        setIsVadActive(level > 0.05);
+      },
+      onError: (err: Error) => {
+        setVoiceStatus(`⚠️ ${err.message}`);
       }
     };
 
     const agent = AdkLiveAgent.getOrCreateInstance(config, callbacks);
     liveAgentRef.current = agent;
     return agent;
-  }, [sessionId, apiKey, groqApiKey, mistralApiKey, modelName, groqModel, mistralModel, studioVoice, rawLibraryItems, excalidrawAPI, getCanvasSnapshot]);
+  }, [sessionId, apiKey, groqApiKey, mistralApiKey, modelName, groqModel, mistralModel, studioVoice, rawLibraryItems, excalidrawAPI, getCanvasSnapshot, updateAgentTranscript]);
 
   // Synchronize Live Agent configuration ONLY when session is actively running
   useEffect(() => {
@@ -388,18 +457,8 @@ export function AgenticWorkspace({ onNavigate }: AgenticWorkspaceProps) {
   };
 
   const handleNewSession = () => {
-    stopAudioResponse();
-    recognizerRef.current?.stop();
-    vadRef.current?.stop();
-    setIsLiveAgentRunning(false);
-    setIsListening(false);
-    setIsSpeaking(false);
-    setIsVadActive(false);
-    setAudioLevel(0);
+    void stopLiveSession();
     setVoiceStatus('Click Start Live Audio Studio to begin');
-
-    AdkLiveAgent.releaseInstance();
-    liveAgentRef.current = null;
     const newId = `agentic_sess_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     setSessionId(newId);
     setMessages([
@@ -450,163 +509,87 @@ export function AgenticWorkspace({ onNavigate }: AgenticWorkspaceProps) {
     }
   };
 
-  // 🎙️ VOICE LIVE AGENT EXECUTION HANDLER
-  const handleVoiceCommand = async (spokenText: string) => {
-    if (!spokenText.trim() || isMuted) return;
+  // 🎙️ Send a text command into the LIVE session (typed suggestions / chips)
+  const handleVoiceCommand = async (text: string) => {
+    const clean = text.trim();
+    if (!clean || isMuted) return;
 
-    // Immediately stop ongoing audio on new voice input (interruption)
-    stopAudioResponse();
-    unlockAudioContext();
+    let agent = liveAgentRef.current;
+    if (!agent?.isVoiceActive()) {
+      appLogger.info('LIVE_AGENT', 'Live session not active — starting it for typed command');
+      await startLiveSession();
+      agent = liveAgentRef.current;
+    }
+    if (!agent?.isVoiceActive()) return;
 
-    appLogger.info('VOICE_TURN', `Handling voice turn: "${spokenText}"`);
-
-    const userMsg: Message = {
-      id: Date.now().toString(),
-      sender: 'user',
-      text: spokenText,
+    lastUserTextRef.current = clean;
+    setMessages((prev) => [...prev, {
+      id: `u_${Date.now()}`,
+      sender: 'user' as const,
+      text: clean,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    };
-
-    setMessages((prev) => [...prev, userMsg]);
+    }]);
     setIsLoading(true);
-    setVoiceStatus('⚡ Live Agent executing command & orchestrating tools...');
 
     try {
-      const agent = liveAgentRef.current || getOrCreateLiveAgent();
-      const result = await agent.processUserPrompt(spokenText, { isVoiceInput: true });
-
-      const assistantMsg: Message = {
-        id: (Date.now() + 1).toString(),
-        sender: 'assistant',
-        text: result.chatReply,
-        subagentBadge: result.subagentBadge,
-        isVoiceReply: true,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      };
-
-      setMessages((prev) => [...prev, assistantMsg]);
-
-      setTimeout(async () => {
-        const snapshot = await getCanvasSnapshot();
-        const turnRecord: SessionTurnRecord = {
-          session_id: sessionId,
-          turn_id: `turn_${Date.now()}`,
-          user_prompt: spokenText,
-          chat_reply: result.chatReply,
-          image_blob: snapshot || '',
-          created_at: new Date().toISOString()
-        };
-
-        if (user) {
-          saveCloudSessionTurn(user.id, turnRecord).catch(() => {});
-        }
-        saveSessionTurn(turnRecord).catch(() => {});
-      }, 500);
-
+      agent.sendTextMessage(clean);
+      setVoiceStatus('⚡ Live Agent thinking...');
     } catch (err: any) {
-      appLogger.error('VOICE_ERROR', `Turn execution failed: ${err.message}`, err);
-      const errorMsg: Message = {
-        id: (Date.now() + 1).toString(),
-        sender: 'assistant',
-        text: `❌ Generation Error: ${err.message || 'Failed to complete voice command.'}`,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      };
-      setMessages((prev) => [...prev, errorMsg]);
-    } finally {
+      appLogger.error('VOICE_ERROR', `Sending message failed: ${err.message}`);
+      setVoiceStatus(`⚠️ ${err.message}`);
       setIsLoading(false);
-      isProcessingVoiceRef.current = false;
-      setVoiceStatus('🎙️ Listening... Speak your next command');
-      setTimeout(() => setActiveSubagentEvent(null), 3000);
-
-      // Auto-listen loop: keep listening if studio is on-air and autoListen is active
-      if (autoListen && isLiveAgentRunning && recognizerRef.current) {
-        try {
-          recognizerRef.current.start();
-          setIsListening(true);
-        } catch {}
-      }
     }
   };
 
-  // 🎙️ START / STOP LIVE AGENT TAKEOVER
-  const toggleLiveAgentSession = () => {
+  // 🎙️ START / STOP the native bidirectional live session
+  const startLiveSession = async () => {
     unlockAudioContext();
 
-    if (isLiveAgentRunning) {
-      appLogger.info('LIVE_AGENT', 'Stopping Live Agent Voice session');
-      recognizerRef.current?.stop();
-      vadRef.current?.stop();
-      stopAudioResponse();
+    if (!apiKey.trim()) {
+      appLogger.warn('AUTH', 'Gemini API key missing, opening Settings');
+      setVoiceStatus('⚠️ Gemini API key is required (it drives the native live session) — add it in Settings (⚙️).');
+      setShowSettings(true);
+      return;
+    }
+
+    appLogger.info('LIVE_AGENT', 'Starting native bidirectional Gemini Live session');
+    setIsLiveAgentRunning(true);
+    const agent = getOrCreateLiveAgent();
+
+    try {
+      await agent.startVoiceSession();
+      setIsListening(true);
+      setVoiceStatus('🎙️ ON AIR — native bidirectional audio. Just talk!');
+    } catch (err: any) {
+      appLogger.error('LIVE_AGENT', `Failed to start live session: ${err.message}`);
       setIsLiveAgentRunning(false);
-      setIsListening(false);
-      setIsSpeaking(false);
-      setIsVadActive(false);
-      setAudioLevel(0);
-      liveAgentRef.current?.setVoiceActive(false);
+      setIsLoading(false);
+      setVoiceStatus(`⚠️ ${err.message}`);
       AdkLiveAgent.releaseInstance();
       liveAgentRef.current = null;
-      setVoiceStatus('Live Audio Studio stopped. Click Start to resume.');
+    }
+  };
+
+  const stopLiveSession = async () => {
+    appLogger.info('LIVE_AGENT', 'Stopping Live Agent Voice session');
+    setIsLiveAgentRunning(false);
+    setIsListening(false);
+    setIsSpeaking(false);
+    setIsVadActive(false);
+    setAudioLevel(0);
+    setIsLoading(false);
+    stopAudioResponse();
+    await liveAgentRef.current?.stopVoiceSession();
+    AdkLiveAgent.releaseInstance();
+    liveAgentRef.current = null;
+    setVoiceStatus('Live Audio Studio stopped. Click Start to resume.');
+  };
+
+  const toggleLiveAgentSession = () => {
+    if (isLiveAgentRunning) {
+      void stopLiveSession();
     } else {
-      if (!apiKey.trim() && !groqApiKey.trim() && !mistralApiKey.trim()) {
-        appLogger.warn('AUTH', 'No API keys provided, opening Settings');
-        setShowSettings(true);
-        return;
-      }
-
-      appLogger.info('LIVE_AGENT', 'Starting Live Agent Voice session');
-      setIsLiveAgentRunning(true);
-      const agent = getOrCreateLiveAgent();
-      agent.setVoiceActive(true);
-
-      // 1. Start Web Audio RMS VAD Engine
-      const vad = new BrowserVAD({
-        onAudioLevel: (level) => {
-          setAudioLevel(level);
-          setIsVadActive(level > 0.05);
-        },
-        onVoiceStart: () => {
-          setIsVadActive(true);
-          appLogger.info('VAD', 'Voice detected (speech started)');
-        },
-        onVoiceEnd: () => {
-          setIsVadActive(false);
-          appLogger.info('VAD', 'Silence detected after speech');
-        }
-      });
-      vadRef.current = vad;
-      vad.start();
-
-      // 2. Deliver warm spoken greeting immediately upon session start
-      agent.greetUserOnLiveStart();
-
-      // 3. Start Continuous Speech Recognition
-      const controller = createSpeechRecognizer(
-        (transcript, isFinal) => {
-          if (isFinal) {
-            const clean = transcript.trim();
-            if (clean.length >= 3) {
-              appLogger.info('SPEECH_RECOGNITION', `Final transcript captured: "${clean}"`);
-              handleVoiceCommand(clean);
-            } else {
-              appLogger.info('SPEECH_RECOGNITION', `Filtered short audio noise artifact: "${clean}"`);
-            }
-          }
-        },
-        (error) => {
-          appLogger.error('SPEECH_RECOGNITION', `Speech recognition error: ${error}`);
-          setIsListening(false);
-          setVoiceStatus(`⚠️ ${error}`);
-        },
-        () => {
-          setIsListening(false);
-        }
-      );
-
-      if (!controller) return;
-      recognizerRef.current = controller;
-      controller.start();
-      setIsListening(true);
-      setVoiceStatus('🎙️ Live Audio Studio Active! Listening to your voice...');
+      void startLiveSession();
     }
   };
 
@@ -645,9 +628,8 @@ export function AgenticWorkspace({ onNavigate }: AgenticWorkspaceProps) {
     window.addEventListener('keydown', handleGlobalKeyDown);
     return () => {
       window.removeEventListener('keydown', handleGlobalKeyDown);
-      recognizerRef.current?.stop();
-      vadRef.current?.stop();
       stopAudioResponse();
+      void liveAgentRef.current?.stopVoiceSession();
       AdkLiveAgent.releaseInstance();
       liveAgentRef.current = null;
     };
@@ -931,15 +913,6 @@ export function AgenticWorkspace({ onNavigate }: AgenticWorkspaceProps) {
                   </option>
                 ))}
               </select>
-
-              <button
-                type="button"
-                className={`studio-auto-listen-btn ${autoListen ? 'active' : ''}`}
-                onClick={() => setAutoListen(!autoListen)}
-                title={autoListen ? 'Auto-Listen ON: Hands-free conversation' : 'Auto-Listen OFF: Single turn'}
-              >
-                {autoListen ? '🔄 Auto-Listen ON' : '⏸️ Single Turn'}
-              </button>
 
               <button
                 type="button"

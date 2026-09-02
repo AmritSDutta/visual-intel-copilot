@@ -1,8 +1,8 @@
-import type { AdkTool, AdkToolExecutionContext, AdkAgentMessage } from '../core/types';
+import type { AdkTool, AdkToolExecutionContext, AdkAgentMessage } from './types';
 import { createCanvasTools } from './canvasTools';
-import { generateTextExplanationWithGroq } from '../llmServices/groqService';
-import { generateDiagramElementsWithMistral } from '../llmServices/mistralService';
-import { generateDiagramFromPrompt } from '../llmServices/geminiService';
+import { generateTextExplanationWithGroq } from './providers';
+import { generateDiagramElementsWithMistral } from './providers';
+import { generateDiagramFromPrompt } from './providers';
 
 export interface MultiAgentToolsConfig {
   geminiApiKey: string;

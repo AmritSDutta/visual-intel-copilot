@@ -1,8 +1,8 @@
 import { convertToExcalidrawElements } from '@excalidraw/excalidraw';
-import { hydrateSkeletonsWithLibrary, sanitizeSkeletonsForExcalidraw } from '../../utils/libraryIndexer';
-import { repairAndParseJson } from '../../utils/jsonRepair';
-import { stripMarkdown } from './promptBuilder';
-import type { AIDiagramResult } from '../core/types';
+import { hydrateSkeletonsWithLibrary, sanitizeSkeletonsForExcalidraw } from '../utils/libraryIndexer';
+import { repairAndParseJson } from '../utils/jsonRepair';
+import { stripMarkdown } from './prompts';
+import type { AIDiagramResult } from './types';
 
 export function extractJsonPayload(text: string): string {
   if (!text) return '';
