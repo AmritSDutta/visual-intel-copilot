@@ -6,6 +6,19 @@ export const GEMINI_LIVE_MODELS = [
   { id: 'gemini-3-flash-live', label: 'gemini-3-flash-live (Fast Live)' }
 ];
 
+export interface StudioVoiceOption {
+  id: string;
+  name: string;
+}
+
+export const STUDIO_VOICES: StudioVoiceOption[] = [
+  { id: 'Puck', name: '🎙️ Puck (Clear & Energetic)' },
+  { id: 'Charon', name: '🎙️ Charon (Deep & Resonant)' },
+  { id: 'Kore', name: '🎙️ Kore (Warm & Natural)' },
+  { id: 'Fenrir', name: '🎙️ Fenrir (Authoritative & Strong)' },
+  { id: 'Aoede', name: '🎙️ Aoede (Melodic & Bright)' }
+];
+
 
 declare global {
   interface Window {
@@ -268,10 +281,11 @@ async function speakWithLiveApi(
   text: string,
   apiKey: string,
   liveModel: string,
-  onEnd?: () => void
+  onEnd?: () => void,
+  voiceName: string = 'Puck'
 ): Promise<boolean> {
   try {
-    console.log(`[Native Audio] Live API (Streaming) → ${liveModel}`);
+    console.log(`[Native Audio] Live API (Streaming) → ${liveModel} (${voiceName})`);
     const ai = new GoogleGenAI({ apiKey, apiVersion: 'v1alpha' });
     let player: StreamingAudioPlayer | null = null;
     let hasAudio = false;
@@ -282,7 +296,7 @@ async function speakWithLiveApi(
         config: {
           responseModalities: [Modality.AUDIO],
           speechConfig: {
-            voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Puck' } }
+            voiceConfig: { prebuiltVoiceConfig: { voiceName } }
           }
         },
         callbacks: {
@@ -350,7 +364,8 @@ export async function speakNativeAudioResponse(
   onStart?: () => void,
   onEnd?: () => void,
   onError?: (err: string) => void,
-  browserSpeechEnabled = false
+  browserSpeechEnabled = false,
+  voiceName: string = 'Puck'
 ): Promise<void> {
   stopAudioResponse();
   unlockAudioContext();
@@ -376,7 +391,7 @@ export async function speakNativeAudioResponse(
   const liveModels = GEMINI_LIVE_MODELS.map((m) => m.id);
 
   for (const liveModel of liveModels) {
-    const played = await speakWithLiveApi(spokenInstruction, apiKey.trim(), liveModel, onEnd);
+    const played = await speakWithLiveApi(spokenInstruction, apiKey.trim(), liveModel, onEnd, voiceName);
     if (played) return;
   }
 

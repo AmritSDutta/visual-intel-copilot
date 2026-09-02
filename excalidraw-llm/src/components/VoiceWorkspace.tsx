@@ -370,7 +370,7 @@ export function VoiceWorkspace({ onNavigate }: VoiceWorkspaceProps) {
     if (!isMuted && provider === 'gemini' && apiKey.trim()) {
       speakNativeAudioResponse(
         query,
-        undefined, // Direct prompt mode for real-time Live API audio
+        query || '', // Direct prompt mode for real-time Live API audio
         apiKey,
         modelName || GEMINI_LIVE_MODELS[0].id,
         () => setIsSpeaking(true),
@@ -513,13 +513,17 @@ export function VoiceWorkspace({ onNavigate }: VoiceWorkspaceProps) {
 
   const handleReplayVoice = (text: string) => {
     stopAudioResponse();
+    const savedVoice = sessionStorage.getItem('STUDIO_VOICE') || 'Puck';
     speakNativeAudioResponse(
       '',
       text,
       apiKey,
       modelName || 'gemini-2.5-flash-native-audio-latest',
       () => setIsSpeaking(true),
-      () => setIsSpeaking(false)
+      () => setIsSpeaking(false),
+      undefined,
+      false,
+      savedVoice
     );
   };
 

@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from './context/AuthContext'
 import { ConfigMissingScreen } from './components/ConfigMissingScreen'
 import { AuthLandingView } from './components/AuthLandingView'
 import { VoiceWorkspace } from './components/VoiceWorkspace'
+import { AgenticWorkspace } from './components/AgenticWorkspace'
 import { AppHeader } from './components/AppHeader'
 import { SettingsModal } from './components/SettingsModal'
 import { HistoryModal } from './components/HistoryModal'
@@ -152,6 +153,10 @@ function AppContent() {
 
   if (currentPath === '/voice') {
     return <VoiceWorkspace onNavigate={navigate} />
+  }
+
+  if (currentPath === '/agentic') {
+    return <AgenticWorkspace onNavigate={navigate} />
   }
 
   return <MainWorkspace onNavigate={navigate} />
