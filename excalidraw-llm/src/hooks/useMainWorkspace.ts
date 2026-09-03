@@ -150,7 +150,7 @@ export function useMainWorkspace() {
         files
       })
 
-      const dataUrl = canvas.toDataURL('image/png', 0.8)
+      const dataUrl = canvas.toDataURL('image/png')
       return dataUrl.replace(/^data:image\/png;base64,/, '')
     } catch (e) {
       console.warn('Snapshot generation warning:', e)
@@ -170,8 +170,7 @@ export function useMainWorkspace() {
         elements: elements as any,
         appState: { ...appState, exportBackground: true, exportWithDarkMode: theme === 'dark' },
         files,
-        mimeType: 'image/png',
-        quality: 0.92
+        mimeType: 'image/png'
       })
 
       const url = URL.createObjectURL(blob)

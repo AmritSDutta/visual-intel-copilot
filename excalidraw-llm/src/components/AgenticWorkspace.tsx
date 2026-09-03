@@ -232,8 +232,7 @@ export function AgenticWorkspace({ onNavigate }: AgenticWorkspaceProps) {
         elements,
         appState: { ...appState, exportBackground: true, exportWithDarkMode: theme === 'dark' },
         files,
-        mimeType: 'image/png',
-        quality: 0.85
+        mimeType: 'image/png'
       });
 
       return new Promise<string>((resolve) => {
@@ -501,8 +500,7 @@ export function AgenticWorkspace({ onNavigate }: AgenticWorkspaceProps) {
         elements: elements as Parameters<typeof exportToBlob>[0]['elements'],
         appState: { ...(appState as object), exportBackground: true, exportWithDarkMode: theme === 'dark' },
         files: files as Parameters<typeof exportToBlob>[0]['files'],
-        mimeType: 'image/png',
-        quality: 0.92
+        mimeType: 'image/png'
       });
 
       const url = URL.createObjectURL(blob);

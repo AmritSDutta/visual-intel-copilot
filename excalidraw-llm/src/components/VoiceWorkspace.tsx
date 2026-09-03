@@ -186,7 +186,7 @@ export function VoiceWorkspace({ onNavigate }: VoiceWorkspaceProps) {
         files: files as Parameters<typeof exportToCanvas>[0]['files']
       });
 
-      const dataUrl = canvas.toDataURL('image/png', 0.8);
+      const dataUrl = canvas.toDataURL('image/png');
       return dataUrl.replace(/^data:image\/png;base64,/, '');
     } catch (e) {
       console.warn('Snapshot generation warning:', e);
@@ -326,8 +326,7 @@ export function VoiceWorkspace({ onNavigate }: VoiceWorkspaceProps) {
         elements: elements as Parameters<typeof exportToBlob>[0]['elements'],
         appState: { ...(appState as object), exportBackground: true, exportWithDarkMode: theme === 'dark' },
         files: files as Parameters<typeof exportToBlob>[0]['files'],
-        mimeType: 'image/png',
-        quality: 0.92
+        mimeType: 'image/png'
       });
 
       const url = URL.createObjectURL(blob);
