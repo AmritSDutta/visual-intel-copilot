@@ -37,7 +37,9 @@ export function buildLibraryCatalog(libraryItems: any[]): LibraryCatalogItem[] {
 export function sanitizeSkeletonsForExcalidraw(skeletons: any[]): any[] {
   if (!Array.isArray(skeletons)) return [];
 
-  return skeletons
+  // 1. First pass: normalize IDs and text content
+  const validElementIds = new Set<string>();
+  const sanitized = skeletons
     .filter(item => item && typeof item === 'object' && typeof item.type === 'string')
     .map(item => {
       const el = { ...item };
@@ -45,6 +47,10 @@ export function sanitizeSkeletonsForExcalidraw(skeletons: any[]): any[] {
       // Ensure unique element ID
       if (!el.id) {
         el.id = `el_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      }
+
+      if (el.type !== 'arrow' && el.type !== 'line') {
+        validElementIds.add(el.id);
       }
 
       // CRITICAL: type: "text" elements MUST have a valid top-level string text property for convertToExcalidrawElements
@@ -67,6 +73,30 @@ export function sanitizeSkeletonsForExcalidraw(skeletons: any[]): any[] {
 
       return el;
     });
+
+  // 2. Second pass: validate arrow bindings against existing element IDs
+  return sanitized.map(el => {
+    if (el.type === 'arrow' || el.type === 'line') {
+      const cleanEl = { ...el };
+
+      // Check start element validity
+      const startId = cleanEl.start?.id || cleanEl.startBinding?.elementId;
+      if (startId && !validElementIds.has(startId)) {
+        delete cleanEl.start;
+        delete cleanEl.startBinding;
+      }
+
+      // Check end element validity
+      const endId = cleanEl.end?.id || cleanEl.endBinding?.elementId;
+      if (endId && !validElementIds.has(endId)) {
+        delete cleanEl.end;
+        delete cleanEl.endBinding;
+      }
+
+      return cleanEl;
+    }
+    return el;
+  });
 }
 
 /**

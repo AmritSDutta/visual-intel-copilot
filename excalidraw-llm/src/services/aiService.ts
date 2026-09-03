@@ -132,7 +132,7 @@ function processResponseJson(cleanJsonStr: string, rawLibraryItems: any[]): AIDi
 
   const { standardSkeletons, hydratedElements } = hydrateSkeletonsWithLibrary(skeletons, rawLibraryItems);
   const sanitizedSkeletons = sanitizeSkeletonsForExcalidraw(standardSkeletons);
-  const convertedStandard = convertToExcalidrawElements(sanitizedSkeletons, { regenerateIds: true });
+  const convertedStandard = convertToExcalidrawElements(sanitizedSkeletons, { regenerateIds: false });
   const finalElements = [...convertedStandard, ...hydratedElements];
 
   return {
@@ -297,13 +297,29 @@ export async function generateDiagramWithOllama(
     tools: ollamaTools.length > 0 ? ollamaTools : undefined
   };
 
+  const isRemote = cleanEndpoint.startsWith('https://') || (!cleanEndpoint.includes('localhost') && !cleanEndpoint.includes('127.0.0.1'));
+
   let response: Response;
   try {
-    response = await fetch(url, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(requestBody)
-    });
+    if (isRemote) {
+      // Remote endpoints like ollama.com must be proxied to avoid browser CORS restrictions
+      response = await fetch('/api/proxy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          targetUrl: url,
+          headers,
+          body: requestBody
+        })
+      });
+    } else {
+      // Localhost / 127.0.0.1 direct fetch
+      response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(requestBody)
+      });
+    }
   } catch (err: any) {
     try {
       response = await fetch('/api/proxy', {
@@ -315,7 +331,7 @@ export async function generateDiagramWithOllama(
           body: requestBody
         })
       });
-    } catch (proxyErr: any) {
+    } catch {
       if (cleanEndpoint.startsWith('https://ollama.com')) {
         throw new Error(
           'Failed to reach Ollama Cloud API. Please ensure your Ollama API Key / Bearer token is provided if required, or check proxy connectivity.'

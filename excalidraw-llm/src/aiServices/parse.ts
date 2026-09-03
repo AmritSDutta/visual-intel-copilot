@@ -54,7 +54,7 @@ export function processResponseJson(cleanJsonStr: string, rawLibraryItems: any[]
 
   const { standardSkeletons, hydratedElements } = hydrateSkeletonsWithLibrary(skeletons, rawLibraryItems);
   const sanitizedSkeletons = sanitizeSkeletonsForExcalidraw(standardSkeletons);
-  const convertedStandard = convertToExcalidrawElements(sanitizedSkeletons, { regenerateIds: true });
+  const convertedStandard = convertToExcalidrawElements(sanitizedSkeletons, { regenerateIds: false });
   const finalElements = [...convertedStandard, ...hydratedElements];
 
   return {

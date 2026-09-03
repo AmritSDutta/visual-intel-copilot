@@ -17,13 +17,15 @@ const localApiProxyPlugin = (): Plugin => ({
             const prefix = `[${time}] [${level || 'INFO'}] [${tag || 'APP'}]`
             
             if (level === 'ERROR') {
-              console.error(`\x1b[31m${prefix} ${message}\x1b[0m`, details ? JSON.stringify(details) : '')
+              console.error(`\x1b[31m${prefix} ${message}\x1b[0m`, details !== undefined ? details : '')
             } else if (level === 'WARN') {
-              console.warn(`\x1b[33m${prefix} ${message}\x1b[0m`, details ? JSON.stringify(details) : '')
+              console.warn(`\x1b[33m${prefix} ${message}\x1b[0m`, details !== undefined ? details : '')
             } else if (level === 'TOOL') {
-              console.log(`\x1b[35m${prefix} 🛠️ ${message}\x1b[0m`, details ? JSON.stringify(details) : '')
+              console.log(`\x1b[35m${prefix} 🛠️ ${message}\x1b[0m`, details !== undefined ? details : '')
+            } else if (level === 'DEBUG') {
+              console.log(`\x1b[90m${prefix} ${message}\x1b[0m`, details !== undefined ? details : '')
             } else {
-              console.log(`\x1b[36m${prefix}\x1b[0m ${message}`, details ? JSON.stringify(details) : '')
+              console.log(`\x1b[36m${prefix}\x1b[0m ${message}`, details !== undefined ? details : '')
             }
           } catch {}
           res.statusCode = 204
