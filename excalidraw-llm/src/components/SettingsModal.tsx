@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { CANVAS_GEMINI_MODEL_OPTIONS, OLLAMA_MODEL_PRESETS } from '../config/aiModelsConfig'
 
 export interface SettingsModalProps {
@@ -33,6 +34,9 @@ export function SettingsModal({
   modelName,
   setModelName
 }: SettingsModalProps) {
+  const [showGeminiKey, setShowGeminiKey] = useState(false)
+  const [showOllamaKey, setShowOllamaKey] = useState(false)
+
   if (!open) return null
 
   return (
@@ -95,14 +99,33 @@ export function SettingsModal({
               />
 
               <label style={{ marginTop: '12px' }}>Ollama API Key (Optional for Cloud/Proxies)</label>
-              <input
-                type="password"
-                value={ollamaApiKey}
-                onChange={(e) => setOllamaApiKey(e.target.value)}
-                placeholder="Bearer token or API key..."
-              />
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                <input
+                  type={showOllamaKey ? 'text' : 'password'}
+                  value={ollamaApiKey}
+                  onChange={(e) => setOllamaApiKey(e.target.value)}
+                  placeholder="Bearer token or API key..."
+                  style={{ width: '100%', paddingRight: '36px' }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowOllamaKey(!showOllamaKey)}
+                  style={{
+                    position: 'absolute',
+                    right: '8px',
+                    background: 'transparent',
+                    border: 'none',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    opacity: 0.7
+                  }}
+                  title={showOllamaKey ? 'Hide key' : 'Show key'}
+                >
+                  {showOllamaKey ? '🙈' : '👁️'}
+                </button>
+              </div>
               <div className="setting-hint">
-                Key is saved in ephemeral <code>sessionStorage</code> and cleared automatically on tab close.
+                Key is saved securely (AES-GCM-256) in encrypted client storage.
               </div>
 
               <label style={{ marginTop: '12px' }}>Ollama Model Preset</label>
@@ -129,14 +152,33 @@ export function SettingsModal({
           ) : (
             <div className="setting-group">
               <label>Gemini API Key</label>
-              <input
-                type="password"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder="AIzaSy..."
-              />
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                <input
+                  type={showGeminiKey ? 'text' : 'password'}
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder="AIzaSy..."
+                  style={{ width: '100%', paddingRight: '36px' }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowGeminiKey(!showGeminiKey)}
+                  style={{
+                    position: 'absolute',
+                    right: '8px',
+                    background: 'transparent',
+                    border: 'none',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    opacity: 0.7
+                  }}
+                  title={showGeminiKey ? 'Hide key' : 'Show key'}
+                >
+                  {showGeminiKey ? '🙈' : '👁️'}
+                </button>
+              </div>
               <div className="setting-hint">
-                Key is saved in ephemeral <code>sessionStorage</code> and cleared automatically on tab close.
+                Key is saved securely (AES-GCM-256) in encrypted client storage.
               </div>
 
               <label style={{ marginTop: '12px' }}>Gemini Model</label>

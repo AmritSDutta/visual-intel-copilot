@@ -376,7 +376,10 @@ export function useMainWorkspace() {
       }
     } catch (error: unknown) {
       console.error('Canvas Orchestrator error:', error)
-      const errorMsgText = error instanceof Error ? error.message : 'Failed to process request.'
+      let errorMsgText = error instanceof Error ? error.message : 'Failed to process request.'
+      if (errorMsgText.includes('API_KEY_INVALID') || errorMsgText.includes('API key not valid')) {
+        errorMsgText = `Gemini API Key is invalid or missing. If you intended to use Ollama (${settings.ollamaEndpoint || 'https://ollama.com'}), switch the provider toggle in the top header to '🦙 Ollama'. Otherwise, update your Gemini API Key in Settings (⚙️).`
+      }
       const errorMsg: Message = {
         id: (Date.now() + 1).toString(),
         sender: 'assistant',

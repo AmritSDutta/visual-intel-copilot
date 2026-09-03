@@ -10,7 +10,7 @@ import { useAuth } from '../context/AuthContext';
 import { saveCloudSessionTurn, getCloudSessionsSummary, getCloudSessionTurns, deleteCloudSession } from '../services/supabaseDbService';
 import { AppHeader } from './AppHeader';
 import { registerActiveCanvasBridge } from '../services/webMcpService';
-import { getItemEncrypted } from '../utils/cryptoStorage';
+import { getItemEncrypted, setItemEncrypted, removeItem } from '../utils/cryptoStorage';
 import {
   createSpeechRecognizer,
   speakNativeAudioResponse,
@@ -59,9 +59,10 @@ export function VoiceWorkspace({ onNavigate }: VoiceWorkspaceProps) {
     localStorage.setItem('APP_THEME', theme);
   }, [theme]);
 
-  // Provider & settings state
   const [provider, setProvider] = useState<'ollama' | 'gemini'>(
-    () => (sessionStorage.getItem('AI_PROVIDER') as 'ollama' | 'gemini') || 'gemini'
+    () => (sessionStorage.getItem('AI_PROVIDER') as 'ollama' | 'gemini') || 
+          (localStorage.getItem('AI_PROVIDER') as 'ollama' | 'gemini') || 
+          'ollama'
   );
   const [ollamaEndpoint, setOllamaEndpoint] = useState(
     () => sessionStorage.getItem('OLLAMA_ENDPOINT') || 'https://ollama.com'
@@ -69,12 +70,14 @@ export function VoiceWorkspace({ onNavigate }: VoiceWorkspaceProps) {
   const [ollamaModel, setOllamaModel] = useState(
     () => sessionStorage.getItem('OLLAMA_MODEL') || 'gemma4:31b-cloud'
   );
-  const [ollamaApiKey, setOllamaApiKey] = useState(
-    () => sessionStorage.getItem('OLLAMA_API_KEY') || ''
-  );
-  const [apiKey, setApiKey] = useState(
-    () => sessionStorage.getItem('GEMINI_API_KEY') || ''
-  );
+  const [ollamaApiKey, setOllamaApiKey] = useState(() => {
+    const raw = sessionStorage.getItem('OLLAMA_API_KEY') || '';
+    return raw.startsWith('__ENC__:v1:') ? '' : raw;
+  });
+  const [apiKey, setApiKey] = useState(() => {
+    const raw = sessionStorage.getItem('GEMINI_API_KEY') || '';
+    return raw.startsWith('__ENC__:v1:') ? '' : raw;
+  });
   const [modelName, setModelName] = useState<string>(() => {
     const saved = sessionStorage.getItem('GEMINI_MODEL');
     if (saved && (SUPPORTED_MODEL_IDS as readonly string[]).includes(saved)) {
@@ -87,6 +90,8 @@ export function VoiceWorkspace({ onNavigate }: VoiceWorkspaceProps) {
     () => sessionStorage.getItem('BROWSER_SPEECH_FALLBACK') === 'true'
   );
   const [showSettings, setShowSettings] = useState(false);
+  const [showGeminiKey, setShowGeminiKey] = useState(false);
+  const [showOllamaKey, setShowOllamaKey] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isCanvasFrozen, setIsCanvasFrozen] = useState(true);
 
@@ -125,10 +130,10 @@ export function VoiceWorkspace({ onNavigate }: VoiceWorkspaceProps) {
           getItemEncrypted('OLLAMA_API_KEY')
         ]);
         if (!mounted) return;
-        if (decryptedGemini && !apiKey) {
+        if (decryptedGemini) {
           setApiKey(decryptedGemini);
         }
-        if (decryptedOllama && !ollamaApiKey) {
+        if (decryptedOllama) {
           setOllamaApiKey(decryptedOllama);
         }
       } catch (err) {
@@ -153,34 +158,42 @@ export function VoiceWorkspace({ onNavigate }: VoiceWorkspaceProps) {
 
   useEffect(() => {
     sessionStorage.setItem('AI_PROVIDER', provider);
+    localStorage.setItem('AI_PROVIDER', provider);
   }, [provider]);
 
   useEffect(() => {
     sessionStorage.setItem('OLLAMA_ENDPOINT', ollamaEndpoint);
+    localStorage.setItem('OLLAMA_ENDPOINT', ollamaEndpoint);
   }, [ollamaEndpoint]);
 
   useEffect(() => {
     sessionStorage.setItem('OLLAMA_MODEL', ollamaModel);
+    localStorage.setItem('OLLAMA_MODEL', ollamaModel);
   }, [ollamaModel]);
 
   useEffect(() => {
     if (ollamaApiKey) {
       sessionStorage.setItem('OLLAMA_API_KEY', ollamaApiKey);
+      setItemEncrypted('OLLAMA_API_KEY', ollamaApiKey).catch(() => {});
     } else {
       sessionStorage.removeItem('OLLAMA_API_KEY');
+      removeItem('OLLAMA_API_KEY');
     }
   }, [ollamaApiKey]);
 
   useEffect(() => {
     if (apiKey) {
       sessionStorage.setItem('GEMINI_API_KEY', apiKey);
+      setItemEncrypted('GEMINI_API_KEY', apiKey).catch(() => {});
     } else {
       sessionStorage.removeItem('GEMINI_API_KEY');
+      removeItem('GEMINI_API_KEY');
     }
   }, [apiKey]);
 
   useEffect(() => {
     sessionStorage.setItem('GEMINI_MODEL', modelName);
+    localStorage.setItem('GEMINI_MODEL', modelName);
   }, [modelName]);
 
   useEffect(() => {
@@ -874,10 +887,10 @@ export function VoiceWorkspace({ onNavigate }: VoiceWorkspaceProps) {
       {/* Settings Popup Window */}
       {showSettings && (
         <div className="popup-overlay" onClick={() => setShowSettings(false)}>
-          <div className="popup-window" onClick={(e) => e.stopPropagation()}>
+          <div className="popup-card settings-popup-card" onClick={(e) => e.stopPropagation()}>
             <div className="popup-header">
-              <h3>⚙️ AI Provider Settings</h3>
-              <button className="popup-close-btn" onClick={() => setShowSettings(false)}>✕</button>
+              <h3>⚙️ Visual Intelligence Settings</h3>
+              <button className="popup-close-btn" onClick={() => setShowSettings(false)} aria-label="Close">✕</button>
             </div>
 
             <div className="popup-body">
@@ -888,8 +901,8 @@ export function VoiceWorkspace({ onNavigate }: VoiceWorkspaceProps) {
                   onClick={() => setProvider('ollama')}
                 >
                   <div className="provider-icon">🦙</div>
-                  <div className="provider-title">Ollama Local</div>
-                  <div className="provider-subtitle">Free & Private</div>
+                  <div className="provider-title">Ollama</div>
+                  <div className="provider-subtitle">Local & Cloud Proxies</div>
                 </div>
                 <div
                   className={`provider-card ${provider === 'gemini' ? 'active' : ''}`}
@@ -932,14 +945,33 @@ export function VoiceWorkspace({ onNavigate }: VoiceWorkspaceProps) {
                   />
 
                   <label style={{ marginTop: '12px' }}>Ollama API Key (Optional for Cloud/Proxies)</label>
-                  <input
-                    type="password"
-                    value={ollamaApiKey}
-                    onChange={(e) => setOllamaApiKey(e.target.value)}
-                    placeholder="Bearer token or API key..."
-                  />
+                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                    <input
+                      type={showOllamaKey ? 'text' : 'password'}
+                      value={ollamaApiKey}
+                      onChange={(e) => setOllamaApiKey(e.target.value)}
+                      placeholder="Bearer token or API key..."
+                      style={{ width: '100%', paddingRight: '36px' }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowOllamaKey(!showOllamaKey)}
+                      style={{
+                        position: 'absolute',
+                        right: '8px',
+                        background: 'transparent',
+                        border: 'none',
+                        cursor: 'pointer',
+                        fontSize: '14px',
+                        opacity: 0.7
+                      }}
+                      title={showOllamaKey ? 'Hide key' : 'Show key'}
+                    >
+                      {showOllamaKey ? '🙈' : '👁️'}
+                    </button>
+                  </div>
                   <div className="setting-hint">
-                    Key is saved in ephemeral <code>sessionStorage</code> and cleared automatically on tab close.
+                    Key is saved securely (AES-GCM-256) in encrypted client storage.
                   </div>
 
                   <label style={{ marginTop: '12px' }}>Ollama Model Preset</label>
@@ -960,12 +992,31 @@ export function VoiceWorkspace({ onNavigate }: VoiceWorkspaceProps) {
 
                   <hr style={{ borderColor: 'var(--border-color)', margin: '16px 0' }} />
                   <label>✨ Gemini API Key (Required for Gemini Native Audio)</label>
-                  <input
-                    type="password"
-                    value={apiKey}
-                    onChange={(e) => setApiKey(e.target.value)}
-                    placeholder="AIzaSy..."
-                  />
+                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                    <input
+                      type={showGeminiKey ? 'text' : 'password'}
+                      value={apiKey}
+                      onChange={(e) => setApiKey(e.target.value)}
+                      placeholder="AIzaSy..."
+                      style={{ width: '100%', paddingRight: '36px' }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowGeminiKey(!showGeminiKey)}
+                      style={{
+                        position: 'absolute',
+                        right: '8px',
+                        background: 'transparent',
+                        border: 'none',
+                        cursor: 'pointer',
+                        fontSize: '14px',
+                        opacity: 0.7
+                      }}
+                      title={showGeminiKey ? 'Hide key' : 'Show key'}
+                    >
+                      {showGeminiKey ? '🙈' : '👁️'}
+                    </button>
+                  </div>
                   <div className="setting-hint">
                     Native Audio output is powered strictly by Gemini <code>gemini-2.5-flash-native-audio-latest</code>.
                   </div>
@@ -973,14 +1024,33 @@ export function VoiceWorkspace({ onNavigate }: VoiceWorkspaceProps) {
               ) : (
                 <div className="setting-group">
                   <label>Gemini API Key</label>
-                  <input
-                    type="password"
-                    value={apiKey}
-                    onChange={(e) => setApiKey(e.target.value)}
-                    placeholder="AIzaSy..."
-                  />
+                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                    <input
+                      type={showGeminiKey ? 'text' : 'password'}
+                      value={apiKey}
+                      onChange={(e) => setApiKey(e.target.value)}
+                      placeholder="AIzaSy..."
+                      style={{ width: '100%', paddingRight: '36px' }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowGeminiKey(!showGeminiKey)}
+                      style={{
+                        position: 'absolute',
+                        right: '8px',
+                        background: 'transparent',
+                        border: 'none',
+                        cursor: 'pointer',
+                        fontSize: '14px',
+                        opacity: 0.7
+                      }}
+                      title={showGeminiKey ? 'Hide key' : 'Show key'}
+                    >
+                      {showGeminiKey ? '🙈' : '👁️'}
+                    </button>
+                  </div>
                   <div className="setting-hint">
-                    Key is saved in ephemeral <code>sessionStorage</code> and cleared automatically on tab close.
+                    Key is saved securely (AES-GCM-256) in encrypted client storage.
                   </div>
 
                   <label style={{ marginTop: '12px' }}>Gemini Model (Native Audio Engine)</label>
@@ -1047,10 +1117,10 @@ export function VoiceWorkspace({ onNavigate }: VoiceWorkspaceProps) {
       {/* History Popup Window */}
       {showHistory && (
         <div className="popup-overlay" onClick={() => setShowHistory(false)}>
-          <div className="popup-window history-popup" onClick={(e) => e.stopPropagation()}>
+          <div className="popup-card history-popup" onClick={(e) => e.stopPropagation()}>
             <div className="popup-header">
               <h3>📁 Saved Diagram History ({user ? 'Cloud Synced' : 'Local Storage'})</h3>
-              <button className="popup-close-btn" onClick={() => setShowHistory(false)}>✕</button>
+              <button className="popup-close-btn" onClick={() => setShowHistory(false)} aria-label="Close">✕</button>
             </div>
 
             <div className="popup-body">
@@ -1112,7 +1182,7 @@ export function VoiceWorkspace({ onNavigate }: VoiceWorkspaceProps) {
       {/* Delete Confirmation Popup Window */}
       {deletingSessionId && (
         <div className="popup-overlay" onClick={() => setDeletingSessionId(null)}>
-          <div className="popup-window" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '420px', textAlign: 'center' }}>
+          <div className="popup-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '420px', textAlign: 'center' }}>
             <div className="popup-header" style={{ justifyContent: 'center' }}>
               <h3 style={{ color: '#ef4444' }}>🗑️ Confirm Deletion</h3>
             </div>

@@ -5,6 +5,7 @@ import { repairAndParseJson } from '../utils/jsonRepair';
 import { webMcpTools } from './webMcpService';
 import { getSystemInstruction, stripMarkdown } from '../aiServices/prompts';
 import { extractJsonPayload } from '../aiServices/parse';
+import { decryptString } from '../utils/cryptoStorage';
 import {
   AI_TASKS,
   TASK_MODEL_REGISTRY,
@@ -109,7 +110,11 @@ export async function generateDiagramFromPrompt(
   modelName?: string,
   rawLibraryItems: any[] = []
 ): Promise<AIDiagramResult> {
-  if (!apiKey) {
+  const resolvedApiKey = (apiKey || '').startsWith('__ENC__:v1:')
+    ? await decryptString(apiKey || '')
+    : (apiKey || '').trim();
+
+  if (!resolvedApiKey) {
     throw new Error('Gemini API key is required. Please set your API key in the settings (⚙️) panel.');
   }
 
@@ -117,7 +122,7 @@ export async function generateDiagramFromPrompt(
   const candidateModels = getCandidateModelsForTask(AI_TASKS.CANVAS_DIAGRAM_ENGINE, modelName);
 
   let lastError: Error | null = null;
-  const ai = new GoogleGenAI({ apiKey });
+  const ai = new GoogleGenAI({ apiKey: resolvedApiKey });
 
   for (const targetModel of candidateModels) {
     try {
@@ -171,12 +176,16 @@ export async function runCanvasOrchestratorAgent(
   // Track 1: GEMINI CLOUD ORCHESTRATOR
   // ==========================================
   if (provider === 'gemini') {
-    if (!apiKey) {
+    const resolvedApiKey = (apiKey || '').startsWith('__ENC__:v1:')
+      ? await decryptString(apiKey || '')
+      : (apiKey || '').trim();
+
+    if (!resolvedApiKey) {
       throw new Error('Gemini API key is required. Please set your API key in Settings (⚙️).');
     }
 
     const candidateModels = getCandidateModelsForTask(AI_TASKS.CANVAS_MAIN_AGENT, modelName);
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = new GoogleGenAI({ apiKey: resolvedApiKey });
 
     const functionDeclarations = webMcpTools.map((t) => ({
       name: t.name,
@@ -300,9 +309,13 @@ export async function runCanvasOrchestratorAgent(
   const isRemote = cleanEndpoint.startsWith('https://') || (!cleanEndpoint.includes('localhost') && !cleanEndpoint.includes('127.0.0.1'));
   const url = `${cleanEndpoint}/api/chat`;
 
+  const resolvedOllamaKey = (ollamaApiKey || '').startsWith('__ENC__:v1:')
+    ? await decryptString(ollamaApiKey || '')
+    : (ollamaApiKey || '').trim();
+
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (ollamaApiKey?.trim()) {
-    headers['Authorization'] = `Bearer ${ollamaApiKey.trim()}`;
+  if (resolvedOllamaKey) {
+    headers['Authorization'] = `Bearer ${resolvedOllamaKey}`;
   }
 
   const ollamaTools = webMcpTools.map((t) => ({
@@ -459,11 +472,15 @@ export async function generateDiagramWithOllama(
   const systemInstruction = getSystemInstruction(rawLibraryItems);
   const url = `${cleanEndpoint}/api/chat`;
 
+  const resolvedOllamaKey = (apiKey || '').startsWith('__ENC__:v1:')
+    ? await decryptString(apiKey || '')
+    : (apiKey || '').trim();
+
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
-  if (apiKey.trim()) {
-    headers['Authorization'] = `Bearer ${apiKey.trim()}`;
+  if (resolvedOllamaKey) {
+    headers['Authorization'] = `Bearer ${resolvedOllamaKey}`;
   }
 
   const ollamaTools = webMcpTools.map((t) => ({

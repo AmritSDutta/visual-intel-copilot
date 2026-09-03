@@ -1,6 +1,7 @@
 import { GoogleGenAI, Modality, Type } from '@google/genai';
 import { StreamingAudioPlayer } from '../aiServices/audioUtils';
 import { webMcpTools } from './webMcpService';
+import { decryptString } from '../utils/cryptoStorage';
 import {
   VOICE_LIVE_MODEL_OPTIONS,
   TASK_MODEL_REGISTRY
@@ -241,11 +242,15 @@ export function closePersistentLiveSession(): void {
  */
 async function speakWithLiveApi(
   text: string,
-  apiKey: string,
+  rawApiKey: string,
   liveModel: string,
   onEnd?: () => void,
   voiceName: string = 'Puck'
 ): Promise<boolean> {
+  const apiKey = rawApiKey.startsWith('__ENC__:v1:')
+    ? await decryptString(rawApiKey)
+    : rawApiKey.trim();
+
   try {
     // 1. If an active session is already connected with matching settings, reuse it immediately
     if (
@@ -461,7 +466,11 @@ export async function speakNativeAudioResponse(
     ? `You are a voice teaching assistant. Speak the following reply aloud in 10 to 15 natural, engaging sentences about : ${textToSpeak}`
     : prompt;
 
-  if (!apiKey || !apiKey.trim()) {
+  const resolvedApiKey = (apiKey || '').startsWith('__ENC__:v1:')
+    ? await decryptString(apiKey || '')
+    : (apiKey || '').trim();
+
+  if (!resolvedApiKey) {
     console.warn('[Native Audio] No Gemini API key — skipping Live API.');
     if (browserSpeechEnabled && textToSpeak) {
       fallbackSpeechSynthesis(textToSpeak, onEnd, onError);
@@ -476,7 +485,7 @@ export async function speakNativeAudioResponse(
   const liveModels = GEMINI_LIVE_MODELS.map((m) => m.id);
 
   for (const liveModel of liveModels) {
-    const played = await speakWithLiveApi(spokenInstruction, apiKey.trim(), liveModel, onEnd, voiceName);
+    const played = await speakWithLiveApi(spokenInstruction, resolvedApiKey, liveModel, onEnd, voiceName);
     if (played) return;
   }
 

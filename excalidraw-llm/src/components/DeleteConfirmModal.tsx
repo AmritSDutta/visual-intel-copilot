@@ -13,7 +13,7 @@ export function DeleteConfirmModal({
 
   return (
     <div className="popup-overlay" onClick={onCancel}>
-      <div className="popup-window" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '420px', textAlign: 'center' }}>
+      <div className="popup-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '420px', textAlign: 'center' }}>
         <div className="popup-header" style={{ justifyContent: 'center' }}>
           <h3 style={{ color: '#ef4444' }}>🗑️ Confirm Deletion</h3>
         </div>

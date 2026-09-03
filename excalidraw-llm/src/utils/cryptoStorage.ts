@@ -113,12 +113,19 @@ function base64ToBuffer(base64: string): Uint8Array {
 /**
  * Encrypts a plaintext string using AES-GCM-256 with a random 12-byte IV.
  */
+/**
+ * Encrypts a plaintext string using AES-GCM-256 with a random 12-byte IV.
+ */
 export async function encryptString(plainText: string): Promise<string> {
   if (!plainText) return '';
+  // If the input was already encrypted, fully unwrap to clean plaintext first
+  const cleanPlainText = await decryptString(plainText);
+  if (!cleanPlainText) return '';
+
   try {
     const key = await getMasterKey();
     const iv = window.crypto.getRandomValues(new Uint8Array(12));
-    const encoded = new TextEncoder().encode(plainText);
+    const encoded = new TextEncoder().encode(cleanPlainText);
 
     const cipherBuffer = await window.crypto.subtle.encrypt(
       { name: 'AES-GCM', iv },
@@ -132,61 +139,81 @@ export async function encryptString(plainText: string): Promise<string> {
     return `${PREFIX}${base64Iv}:${base64Cipher}`;
   } catch (err) {
     console.error('[CryptoStorage] Encryption error:', err);
-    return plainText;
+    return cleanPlainText;
   }
 }
 
 /**
  * Decrypts an encrypted string (`__ENC__:v1:...`) back to plaintext.
+ * Unwraps nested encryption layers if previously double-encoded.
  * Returns legacy unencrypted strings directly.
  */
 export async function decryptString(cipherText: string): Promise<string> {
   if (!cipherText) return '';
-  if (!cipherText.startsWith(PREFIX)) {
-    // Legacy plaintext string
-    return cipherText;
+  let current = cipherText.trim();
+  let unwrapCount = 0;
+
+  while (current && current.startsWith(PREFIX) && unwrapCount < 5) {
+    unwrapCount++;
+    try {
+      const key = await getMasterKey();
+      const payload = current.substring(PREFIX.length);
+      const [base64Iv, base64Cipher] = payload.split(':');
+
+      if (!base64Iv || !base64Cipher) {
+        break;
+      }
+
+      const iv = base64ToBuffer(base64Iv);
+      const cipherBuffer = base64ToBuffer(base64Cipher);
+
+      const decryptedBuffer = await window.crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv: iv as any },
+        key,
+        cipherBuffer as any
+      );
+
+      const next = new TextDecoder().decode(decryptedBuffer);
+      if (!next || next === current) break;
+      current = next.trim();
+    } catch (err) {
+      console.warn('[CryptoStorage] Decryption step failed:', err);
+      break;
+    }
   }
 
-  try {
-    const key = await getMasterKey();
-    const payload = cipherText.substring(PREFIX.length);
-    const [base64Iv, base64Cipher] = payload.split(':');
-
-    if (!base64Iv || !base64Cipher) {
-      return '';
-    }
-
-    const iv = base64ToBuffer(base64Iv);
-    const cipherBuffer = base64ToBuffer(base64Cipher);
-
-    const decryptedBuffer = await window.crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: iv as any },
-      key,
-      cipherBuffer as any
-    );
-
-    return new TextDecoder().decode(decryptedBuffer);
-  } catch (err) {
-    console.warn('[CryptoStorage] Decryption failed or invalid key context:', err);
+  // If still starts with prefix, decryption failed (e.g. invalid auth tag/key).
+  // NEVER return raw ciphertext back to state or UI!
+  if (current.startsWith(PREFIX)) {
     return '';
   }
+
+  return current;
 }
 
 /**
  * Saves a sensitive value to localStorage encrypted with AES-GCM-256.
+ * Guarantees that in-memory sessionStorage only receives pure plaintext.
  */
 export async function setItemEncrypted(key: string, value: string): Promise<void> {
   if (typeof window === 'undefined') return;
-  if (!value) {
+  if (!value || !value.trim()) {
     localStorage.removeItem(key);
     sessionStorage.removeItem(key);
     return;
   }
 
   try {
-    const encrypted = await encryptString(value);
+    const plainText = await decryptString(value);
+    if (!plainText) {
+      // If value was corrupt ciphertext that failed decryption, purge it
+      localStorage.removeItem(key);
+      sessionStorage.removeItem(key);
+      return;
+    }
+    const encrypted = await encryptString(plainText);
     localStorage.setItem(key, encrypted);
-    sessionStorage.setItem(key, value); // Ephemeral plaintext in memory session
+    sessionStorage.setItem(key, plainText); // Always store pure plaintext in memory sessionStorage
   } catch {
     localStorage.setItem(key, value);
     sessionStorage.setItem(key, value);
@@ -199,25 +226,33 @@ export async function setItemEncrypted(key: string, value: string): Promise<void
 export async function getItemEncrypted(key: string): Promise<string> {
   if (typeof window === 'undefined') return '';
 
-  // Check sessionStorage first (ephemeral in memory for current tab)
+  // Check sessionStorage first
   const sessionVal = sessionStorage.getItem(key);
-  if (sessionVal && !sessionVal.startsWith(PREFIX)) {
-    return sessionVal;
+  if (sessionVal) {
+    const decryptedSession = await decryptString(sessionVal);
+    if (decryptedSession) {
+      sessionStorage.setItem(key, decryptedSession);
+      return decryptedSession;
+    } else if (sessionVal.startsWith(PREFIX)) {
+      sessionStorage.removeItem(key);
+    }
   }
 
-  // Read from localStorage and decrypt
+  // Read from localStorage and fully decrypt
   const storedVal = localStorage.getItem(key);
   if (!storedVal) return '';
 
   const decrypted = await decryptString(storedVal);
 
-  // Auto-upgrade legacy plaintext in localStorage to encrypted format
-  if (decrypted && !storedVal.startsWith(PREFIX)) {
-    setItemEncrypted(key, decrypted).catch(() => {});
-  }
-
   if (decrypted) {
     sessionStorage.setItem(key, decrypted);
+    if (!storedVal.startsWith(PREFIX)) {
+      setItemEncrypted(key, decrypted).catch(() => {});
+    }
+  } else if (storedVal.startsWith(PREFIX)) {
+    // Purge corrupted/un-decryptable ciphertext
+    localStorage.removeItem(key);
+    sessionStorage.removeItem(key);
   }
 
   return decrypted;

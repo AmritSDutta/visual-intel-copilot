@@ -550,9 +550,11 @@
   to { opacity: 1; }
 }
 
-.popup-window {
+.popup-window,
+.popup-card {
   background: var(--popup-bg);
   backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
   border: 1px solid var(--popup-border);
   border-radius: 20px;
   width: 90%;
@@ -566,7 +568,8 @@
   color: var(--text-primary);
 }
 
-.popup-window.history-popup {
+.popup-window.history-popup,
+.popup-card.history-popup {
   max-width: 680px;
 }
 

@@ -8,9 +8,9 @@
   --text-secondary: #9ca3af;
   --text-muted: #6b7280;
   --header-bg: #0f172a;
-  --popup-bg: rgba(15, 23, 42, 0.94);
-  --popup-header-bg: rgba(30, 41, 59, 0.6);
-  --popup-card-bg: rgba(30, 41, 59, 0.6);
+  --popup-bg: rgba(15, 23, 42, 0.78);
+  --popup-header-bg: rgba(30, 41, 59, 0.45);
+  --popup-card-bg: rgba(30, 41, 59, 0.45);
   --popup-border: rgba(255, 255, 255, 0.12);
   --accent-primary: #6366f1;
   --accent-gradient: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
@@ -28,10 +28,10 @@
   --text-secondary: #475569;
   --text-muted: #64748b;
   --header-bg: #ffffff;
-  --popup-bg: rgba(255, 255, 255, 0.95);
-  --popup-header-bg: rgba(241, 245, 249, 0.9);
-  --popup-card-bg: #f8fafc;
-  --popup-border: rgba(0, 0, 0, 0.12);
+  --popup-bg: rgba(255, 255, 255, 0.82);
+  --popup-header-bg: rgba(241, 245, 249, 0.6);
+  --popup-card-bg: rgba(248, 250, 252, 0.6);
+  --popup-border: rgba(0, 0, 0, 0.1);
   --accent-primary: #4f46e5;
   --accent-gradient: linear-gradient(135deg, #4f46e5 0%, #9333ea 100%);
   --accent-hover: #4338ca;

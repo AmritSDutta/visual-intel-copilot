@@ -20,16 +20,14 @@ export function useSettings() {
     localStorage.getItem('OLLAMA_MODEL') || 
     TASK_MODEL_REGISTRY.OLLAMA_CHAT.primaryModel
   )
-  const [ollamaApiKey, setOllamaApiKey] = useState(() => 
-    sessionStorage.getItem('OLLAMA_API_KEY') || 
-    import.meta.env.VITE_OLLAMA_API_KEY || 
-    ''
-  )
-  const [apiKey, setApiKey] = useState(() => 
-    sessionStorage.getItem('GEMINI_API_KEY') || 
-    import.meta.env.VITE_GEMINI_API_KEY || 
-    ''
-  )
+  const [ollamaApiKey, setOllamaApiKey] = useState(() => {
+    const raw = sessionStorage.getItem('OLLAMA_API_KEY') || import.meta.env.VITE_OLLAMA_API_KEY || ''
+    return raw.startsWith('__ENC__:v1:') ? '' : raw
+  })
+  const [apiKey, setApiKey] = useState(() => {
+    const raw = sessionStorage.getItem('GEMINI_API_KEY') || import.meta.env.VITE_GEMINI_API_KEY || ''
+    return raw.startsWith('__ENC__:v1:') ? '' : raw
+  })
   const [modelName, setModelName] = useState(() => 
     sessionStorage.getItem('GEMINI_MODEL') || 
     localStorage.getItem('GEMINI_MODEL') || 
@@ -47,10 +45,10 @@ export function useSettings() {
           getItemEncrypted('OLLAMA_API_KEY')
         ])
         if (!mounted) return
-        if (decryptedGemini && !apiKey) {
+        if (decryptedGemini) {
           setApiKey(decryptedGemini)
         }
-        if (decryptedOllama && !ollamaApiKey) {
+        if (decryptedOllama) {
           setOllamaApiKey(decryptedOllama)
         }
       } catch (err) {

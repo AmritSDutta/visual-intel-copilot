@@ -23,10 +23,10 @@ export function HistoryModal({
 
   return (
     <div className="popup-overlay" onClick={onClose}>
-      <div className="popup-window history-popup" onClick={(e) => e.stopPropagation()}>
+      <div className="popup-card history-popup" onClick={(e) => e.stopPropagation()}>
         <div className="popup-header">
           <h3>📁 Saved Diagram History</h3>
-          <button className="popup-close-btn" onClick={onClose}>✕</button>
+          <button className="popup-close-btn" onClick={onClose} aria-label="Close">✕</button>
         </div>
 
         <div className="popup-body">
