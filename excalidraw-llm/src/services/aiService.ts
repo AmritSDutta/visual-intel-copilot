@@ -114,39 +114,53 @@ export async function generateDiagramFromPrompt(
         }
       });
 
-      // Handle function calls triggered by Gemini
-      if (response.functionCalls && response.functionCalls.length > 0) {
-        console.log('[Gemini AI] Model triggered function calls:', response.functionCalls);
+      // Handle function calls triggered by Gemini (support multi-turn tool loops)
+      let toolTurns = 0;
+      while (response.functionCalls && response.functionCalls.length > 0 && toolTurns < 5) {
+        toolTurns++;
+        console.log(`[Gemini AI] Model triggered function calls (turn ${toolTurns}):`, response.functionCalls);
 
+        // 1. Preserve the exact model content from Gemini containing the thought signature and functionCall parts
+        const modelContent = response.candidates?.[0]?.content || {
+          role: 'model',
+          parts: response.functionCalls.map((c) => ({ functionCall: { name: c.name, args: c.args || {} } }))
+        };
+        contents.push(modelContent);
+
+        // 2. Execute all function calls and collect functionResponse parts in one user turn
+        const functionResponseParts: any[] = [];
         for (const call of response.functionCalls) {
           const tool = webMcpTools.find((t) => t.name === call.name);
           let toolResult: any = { error: `Tool "${call.name}" not found` };
           if (tool) {
-            toolResult = await tool.execute(call.args || {});
+            try {
+              toolResult = await tool.execute(call.args || {});
+            } catch (toolErr: any) {
+              toolResult = { error: String(toolErr?.message || toolErr) };
+            }
           }
-
-          contents.push({
-            role: 'model',
-            parts: [{ functionCall: { name: call.name, args: call.args || {} } }]
-          });
-          contents.push({
-            role: 'user',
-            parts: [{
-              functionResponse: {
-                name: call.name,
-                response: toolResult
-              }
-            }]
+          functionResponseParts.push({
+            functionResponse: {
+              name: call.name,
+              response: toolResult
+            }
           });
         }
 
+        contents.push({
+          role: 'user',
+          parts: functionResponseParts
+        });
+
+        // 3. Request next turn from Gemini
         response = await ai.models.generateContent({
           model: targetModel,
           contents,
           config: {
             systemInstruction,
             temperature: 0.2,
-            maxOutputTokens: 8192
+            maxOutputTokens: 8192,
+            tools: (functionDeclarations.length > 0 ? [{ functionDeclarations }] : undefined) as any
           }
         });
       }
@@ -269,14 +283,21 @@ export async function generateDiagramWithOllama(
     throw new Error(`Ollama Error (${response.status}): ${errText || response.statusText}`);
   }
 
-  const data = await response.json();
+  let currentData = await response.json();
+  let ollamaTurns = 0;
 
-  // Check if Ollama model invoked tool_calls
-  if (data?.message?.tool_calls && Array.isArray(data.message.tool_calls) && data.message.tool_calls.length > 0) {
-    console.log('[Ollama] Model invoked tool_calls:', data.message.tool_calls);
-    messages.push(data.message);
+  // Multi-turn tool calling loop for Ollama (e.g. find_canvas_nodes -> modify_canvas_node)
+  while (
+    currentData?.message?.tool_calls &&
+    Array.isArray(currentData.message.tool_calls) &&
+    currentData.message.tool_calls.length > 0 &&
+    ollamaTurns < 5
+  ) {
+    ollamaTurns++;
+    console.log(`[Ollama] Model invoked tool_calls (turn ${ollamaTurns}):`, currentData.message.tool_calls);
+    messages.push(currentData.message);
 
-    for (const call of data.message.tool_calls) {
+    for (const call of currentData.message.tool_calls) {
       const fnName = call?.function?.name;
       const fnArgs = typeof call?.function?.arguments === 'string'
         ? JSON.parse(call.function.arguments)
@@ -285,7 +306,11 @@ export async function generateDiagramWithOllama(
       const tool = webMcpTools.find((t) => t.name === fnName);
       let toolResult: any = { error: `Tool "${fnName}" not found` };
       if (tool) {
-        toolResult = await tool.execute(fnArgs);
+        try {
+          toolResult = await tool.execute(fnArgs);
+        } catch (toolErr: any) {
+          toolResult = { error: String(toolErr?.message || toolErr) };
+        }
       }
 
       messages.push({
@@ -298,7 +323,8 @@ export async function generateDiagramWithOllama(
       model: cleanModel,
       messages,
       format: 'json',
-      stream: false
+      stream: false,
+      tools: ollamaTools.length > 0 ? ollamaTools : undefined
     };
 
     let followUpResponse: Response | null = null;
@@ -333,17 +359,13 @@ export async function generateDiagramWithOllama(
     }
 
     if (followUpResponse && followUpResponse.ok) {
-      const followUpData = await followUpResponse.json();
-      const followUpText = followUpData?.message?.content || followUpData?.response || '';
-      let clean = followUpText.trim();
-      if (clean.startsWith('```')) {
-        clean = clean.replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim();
-      }
-      return processResponseJson(clean, rawLibraryItems);
+      currentData = await followUpResponse.json();
+    } else {
+      break;
     }
   }
 
-  const rawText = data?.message?.content || data?.response || '';
+  const rawText = currentData?.message?.content || currentData?.response || '';
 
   let cleanJsonStr = rawText.trim();
   if (cleanJsonStr.startsWith('```')) {
