@@ -729,7 +729,6 @@ export async function initWebMcp(): Promise<boolean> {
 
   try {
     for (const tool of webMcpTools) {
-      if (registeredToolNames.has(tool.name)) continue;
       for (const target of targets) {
         try {
           await target.registerTool(tool);

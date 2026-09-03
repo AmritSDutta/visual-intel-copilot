@@ -23,6 +23,7 @@ coverage/
 
 # Cache
 .vite/
+.wrangler/
 
 # Editor directories and files
 .vscode/*
