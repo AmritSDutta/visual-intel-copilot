@@ -308,12 +308,16 @@ export const getCanvasVisualSnapshotTool: WebMcpTool = {
     if (!snapshot) {
       return { status: 'empty', message: 'Canvas is currently blank, no visual snapshot generated.' };
     }
-    logToStdio('WEBMCP', 'Tool "get_canvas_visual_snapshot" captured canvas image');
+    logToStdio('WEBMCP', 'Tool "get_canvas_visual_snapshot" captured canvas image', { bytes: snapshot.length });
+    // Return the FULL base64 PNG so external WebMCP hosts (navigator/document/window.modelContext)
+    // can actually see the canvas. Internal agent loops (aiService/voiceService) must route this
+    // result through compactToolResultForModel() before echoing it into LLM context.
     return {
       status: 'success',
       hasImage: true,
+      mimeType: 'image/png',
       imageLength: snapshot.length,
-      previewUrl: snapshot.substring(0, 80) + '...'
+      imageBase64: snapshot
     };
   }
 };
@@ -704,7 +708,56 @@ export async function initWebMcp(): Promise<boolean> {
   }
 }
 
-// Automatically invoke on module load if in a browser environment
+// Automatically invoke on module load if in a browser environment.
+// Uses the retrying initializer: modelContext targets are often injected by
+// the host browser/extension AFTER this module first evaluates.
 if (typeof window !== 'undefined') {
-  initWebMcp();
+  ensureWebMcpInitialized();
+}
+
+const WEBMCP_INIT_MAX_ATTEMPTS = 5;
+const WEBMCP_INIT_RETRY_DELAY_MS = 800;
+
+const sleepAsync = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Resilient WebMCP initialization: retries while no modelContext targets are
+ * available (browser/extension hydration race at page load), and is invoked
+ * again from App.tsx once the auth gate resolves.
+ * Idempotent — initWebMcp() skips already-registered tools via registeredToolNames.
+ */
+export async function ensureWebMcpInitialized(): Promise<boolean> {
+  for (let attempt = 1; attempt <= WEBMCP_INIT_MAX_ATTEMPTS; attempt++) {
+    const ok = await initWebMcp();
+    if (ok) {
+      return true;
+    }
+    if (getModelContextTargets().length === 0 && attempt < WEBMCP_INIT_MAX_ATTEMPTS) {
+      logToStdio('WEBMCP', `modelContext targets not ready (attempt ${attempt}/${WEBMCP_INIT_MAX_ATTEMPTS}), retrying in ${WEBMCP_INIT_RETRY_DELAY_MS}ms...`);
+      await sleepAsync(WEBMCP_INIT_RETRY_DELAY_MS);
+    }
+  }
+  logToStdio('WEBMCP', 'WebMCP init gave up: modelContext targets never became available or registration failed');
+  return false;
+}
+
+/**
+ * Tools whose raw results embed very large payloads (full base64 PNG snapshots)
+ * that must never be echoed verbatim into internal LLM context. Internal agent
+ * loops pass tool results through this helper before feeding the model, while
+ * external WebMCP hosts receive the complete result.
+ */
+export function compactToolResultForModel(toolName: string, result: any): any {
+  if (!result || typeof result !== 'object') {
+    return result;
+  }
+  if (toolName === 'get_canvas_visual_snapshot' && typeof result.imageBase64 === 'string') {
+    const { imageBase64, ...rest } = result;
+    return {
+      ...rest,
+      previewUrl: imageBase64.substring(0, 80) + '...',
+      note: 'Full base64 PNG payload (imageBase64) omitted from model context for budget; it remains available to external WebMCP hosts.'
+    };
+  }
+  return result;
 }

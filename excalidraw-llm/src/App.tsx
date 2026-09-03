@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import '@excalidraw/excalidraw/index.css'
 import './App.css'
 import { AuthProvider, useAuth } from './context/AuthContext'
+import { ensureWebMcpInitialized } from './services/webMcpService'
 import { ConfigMissingScreen } from './components/ConfigMissingScreen'
 import { AuthLandingView } from './components/AuthLandingView'
 import { VoiceWorkspace } from './components/VoiceWorkspace'
@@ -115,6 +116,16 @@ function AppContent() {
     window.addEventListener('popstate', handlePopState)
     return () => window.removeEventListener('popstate', handlePopState)
   }, [])
+
+  // Re-attempt WebMCP tool registration once the auth gate resolves (and on route
+  // switches). Module-load init can run before the browser exposes
+  // navigator/document/window.modelContext, which would silently leave all 9 tools
+  // unregistered. ensureWebMcpInitialized is idempotent.
+  useEffect(() => {
+    if (!loading && user) {
+      ensureWebMcpInitialized()
+    }
+  }, [loading, user, currentPath])
 
   const navigate = (path: string) => {
     window.history.pushState({}, '', path)

@@ -2,7 +2,7 @@ import { convertToExcalidrawElements } from '@excalidraw/excalidraw';
 import { GoogleGenAI, Type } from '@google/genai';
 import { hydrateSkeletonsWithLibrary, sanitizeSkeletonsForExcalidraw, normalizeLinearElement } from '../utils/libraryIndexer';
 import { repairAndParseJson } from '../utils/jsonRepair';
-import { webMcpTools } from './webMcpService';
+import { webMcpTools, compactToolResultForModel } from './webMcpService';
 import { getSystemInstruction, stripMarkdown } from '../aiServices/prompts';
 import { extractJsonPayload } from '../aiServices/parse';
 import { decryptString } from '../utils/cryptoStorage';
@@ -259,7 +259,7 @@ export async function runCanvasOrchestratorAgent(
             functionResponseParts.push({
               functionResponse: {
                 name: callName,
-                response: toolResult
+                response: compactToolResultForModel(callName, toolResult)
               }
             });
           }
@@ -412,7 +412,7 @@ export async function runCanvasOrchestratorAgent(
 
       historyMessages.push({
         role: 'tool',
-        content: JSON.stringify(toolResult)
+        content: JSON.stringify(compactToolResultForModel(fnName, toolResult))
       });
     }
 
@@ -595,7 +595,7 @@ export async function generateDiagramWithOllama(
 
       messages.push({
         role: 'tool',
-        content: JSON.stringify(toolResult)
+        content: JSON.stringify(compactToolResultForModel(fnName, toolResult))
       });
     }
 

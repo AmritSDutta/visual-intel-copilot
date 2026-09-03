@@ -40,6 +40,7 @@ const localApiProxyPlugin = (): Plugin => ({
     })
 
     // 2. Local API Proxy for external AI providers
+    // Mirrors functions/api/proxy.ts: allow-list only (no open relay), Authorization-only header forwarding.
     server.middlewares.use('/api/proxy', async (req, res) => {
       if (req.method === 'POST') {
         let bodyStr = ''
@@ -47,12 +48,29 @@ const localApiProxyPlugin = (): Plugin => ({
         req.on('end', async () => {
           try {
             const { targetUrl, body, headers } = JSON.parse(bodyStr)
+            let parsed: URL
+            try {
+              parsed = new URL(targetUrl)
+            } catch {
+              parsed = null as unknown as URL
+            }
+            const allowed = !!parsed && parsed.protocol === 'https:' && ['ollama.com', 'generativelanguage.googleapis.com'].includes(parsed.hostname.toLowerCase())
+            if (!allowed) {
+              res.statusCode = 403
+              res.setHeader('Content-Type', 'application/json')
+              res.setHeader('Access-Control-Allow-Origin', '*')
+              res.end(JSON.stringify({ error: 'Blocked: target host is not on the proxy allow-list (allowed: ollama.com, generativelanguage.googleapis.com)' }))
+              return
+            }
+            const forwardHeaders: Record<string, string> = {
+              'Content-Type': 'application/json'
+            }
+            if (headers && typeof headers.Authorization === 'string' && headers.Authorization) {
+              forwardHeaders['Authorization'] = headers.Authorization
+            }
             const response = await fetch(targetUrl, {
               method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                ...(headers || {})
-              },
+              headers: forwardHeaders,
               body: JSON.stringify(body)
             })
             const data = await response.text()

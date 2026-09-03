@@ -1,6 +1,6 @@
 import { GoogleGenAI, Modality, Type } from '@google/genai';
 import { StreamingAudioPlayer } from '../aiServices/audioUtils';
-import { webMcpTools } from './webMcpService';
+import { webMcpTools, compactToolResultForModel } from './webMcpService';
 import { decryptString } from '../utils/cryptoStorage';
 import {
   VOICE_LIVE_MODEL_OPTIONS,
@@ -356,7 +356,7 @@ Always acknowledge tool actions smoothly and provide a clear, concise verbal sum
                 responses.push({
                   id: call.id || call.name,
                   name: call.name,
-                  response: toolResult
+                  response: compactToolResultForModel(call.name, toolResult)
                 });
               }
 
