@@ -37,7 +37,11 @@ export async function onRequestPost(context: { request: Request; env: Env }): Pr
     if (!targetUrl || typeof targetUrl !== 'string') {
       return new Response(JSON.stringify({ error: 'Missing or invalid targetUrl' }), {
         status: 400,
-        headers: { 'Content-Type': 'application/json' }
+        headers: {
+          'Content-Type': 'application/json',
+          'Strict-Transport-Security': 'max-age=31536000; includeSubDomains; preload',
+          'X-Content-Type-Options': 'nosniff'
+        }
       });
     }
 
@@ -48,7 +52,12 @@ export async function onRequestPost(context: { request: Request; env: Env }): Pr
         }),
         {
           status: 403,
-          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+            'Strict-Transport-Security': 'max-age=31536000; includeSubDomains; preload',
+            'X-Content-Type-Options': 'nosniff'
+          }
         }
       );
     }
@@ -74,7 +83,9 @@ export async function onRequestPost(context: { request: Request; env: Env }): Pr
         'Content-Type': 'application/json',
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Strict-Transport-Security': 'max-age=31536000; includeSubDomains; preload',
+        'X-Content-Type-Options': 'nosniff'
       }
     });
   } catch (err: any) {
@@ -84,7 +95,9 @@ export async function onRequestPost(context: { request: Request; env: Env }): Pr
         status: 500,
         headers: {
           'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': '*'
+          'Access-Control-Allow-Origin': '*',
+          'Strict-Transport-Security': 'max-age=31536000; includeSubDomains; preload',
+          'X-Content-Type-Options': 'nosniff'
         }
       }
     );
@@ -97,7 +110,9 @@ export async function onRequestOptions(): Promise<Response> {
     headers: {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Strict-Transport-Security': 'max-age=31536000; includeSubDomains; preload',
+      'X-Content-Type-Options': 'nosniff'
     }
   });
 }
