@@ -350,6 +350,41 @@ export const readChatMessagesTool: WebMcpTool = {
 
 // ── 3. In-Place Canvas Manipulation Tools ──────────────────────────────
 
+const EXCALIDRAW_COLOR_PALETTE: Record<string, string> = {
+  white: '#ffffff',
+  black: '#1e1e1e',
+  gray: '#ced4da',
+  grey: '#ced4da',
+  darkgray: '#495057',
+  darkgrey: '#495057',
+  lightgray: '#f8f9fa',
+  lightgrey: '#f8f9fa',
+  transparent: 'transparent',
+  yellow: '#ffe066',
+  blue: '#a5d8ff',
+  green: '#8ce99a',
+  red: '#ff8787',
+  orange: '#ffd8a8',
+  purple: '#d0bfff',
+  violet: '#e599f7',
+  pink: '#fcc2d7',
+  teal: '#96f2d7',
+  cyan: '#99e9f2',
+  indigo: '#bac8ff'
+};
+
+function normalizeCanvasColor(color?: string): string | undefined {
+  if (!color) return undefined;
+  const lower = color.trim().toLowerCase();
+  if (EXCALIDRAW_COLOR_PALETTE[lower]) {
+    return EXCALIDRAW_COLOR_PALETTE[lower];
+  }
+  if (lower.startsWith('#') || lower.startsWith('rgb') || lower.startsWith('hsl')) {
+    return color.trim();
+  }
+  return color.trim();
+}
+
 export const modifyCanvasNodeTool: WebMcpTool = {
   name: 'modify_canvas_node',
   description: 'Performs a targeted in-place modification on an existing canvas node (renaming label, updating border/fill colors, or changing coordinates) without clearing or affecting other elements on the canvas.',
@@ -359,7 +394,7 @@ export const modifyCanvasNodeTool: WebMcpTool = {
     properties: {
       nodeId: {
         type: 'string',
-        description: 'The unique ID or text label of the node to modify.'
+        description: 'The unique ID or text label of the node to modify (e.g. "Redis Cache", "Order Service", or element ID).'
       },
       newLabel: {
         type: 'string',
@@ -367,58 +402,120 @@ export const modifyCanvasNodeTool: WebMcpTool = {
       },
       strokeColor: {
         type: 'string',
-        description: 'Optional new border color (hex code).'
+        description: 'Optional new border color (hex code or color name like "blue", "red", "green", "yellow", "purple").'
       },
       backgroundColor: {
         type: 'string',
-        description: 'Optional new background fill color (hex code).'
+        description: 'Optional new background fill color (hex code or color name like "blue", "red", "green", "yellow", "purple").'
       }
     },
     required: ['nodeId']
   },
   execute: async (args: { nodeId: string; newLabel?: string; strokeColor?: string; backgroundColor?: string }) => {
-    const elements = activeCanvasBridge?.getElements ? activeCanvasBridge.getElements() : [];
-    if (!elements.length || !activeCanvasBridge?.setElements) {
+    const rawElements = activeCanvasBridge?.getElements ? activeCanvasBridge.getElements() : [];
+    if (!rawElements.length || !activeCanvasBridge?.setElements) {
       return { error: 'No active canvas elements found to modify' };
     }
 
-    const targetId = String(args.nodeId).toLowerCase();
-    let modified = false;
-
-    const updatedElements = elements.map((el: any) => {
-      const matchesId = el.id && el.id.toLowerCase() === targetId;
-      const matchesText = (typeof el.text === 'string' && el.text.toLowerCase().includes(targetId)) ||
-                          (el.label && typeof el.label.text === 'string' && el.label.text.toLowerCase().includes(targetId));
-
-      if (matchesId || matchesText) {
-        modified = true;
-        const updated = { ...el };
-        if (args.newLabel) {
-          if (updated.type === 'text') updated.text = args.newLabel;
-          if (updated.label) {
-            if (typeof updated.label === 'object') {
-              updated.label = { ...updated.label, text: args.newLabel };
-            } else {
-              updated.label = { text: args.newLabel };
-            }
-          }
-        }
-        if (args.strokeColor) updated.strokeColor = args.strokeColor;
-        if (args.backgroundColor) updated.backgroundColor = args.backgroundColor;
-        updated.version = (updated.version || 1) + 1;
-        updated.versionNonce = Math.floor(Math.random() * 2000000000);
-        return normalizeLinearElement(updated);
-      }
-      return normalizeLinearElement(el);
-    });
-
-    if (modified) {
-      activeCanvasBridge.setElements(updatedElements);
-      logToStdio('WEBMCP', `Tool "modify_canvas_node" updated node matching '${args.nodeId}'`, args);
-      return { status: 'success', message: `Updated node matching '${args.nodeId}' in-place.` };
+    const targetQuery = String(args.nodeId || '').trim().toLowerCase();
+    if (!targetQuery) {
+      return { error: 'nodeId query is required' };
     }
 
-    return { status: 'not_found', message: `No node found matching '${args.nodeId}'.` };
+    const normBg = normalizeCanvasColor(args.backgroundColor);
+    const normStroke = normalizeCanvasColor(args.strokeColor);
+
+    // 1. First Pass: Identify all matched elements (by ID, label, text) and collect their container/bound IDs
+    const matchedElementIds = new Set<string>();
+
+    for (const el of rawElements) {
+      if (!el || el.isDeleted) continue;
+      const elId = String(el.id || '').toLowerCase();
+      const elText = typeof el.text === 'string' ? el.text.toLowerCase() : '';
+      const elLabel = el.label && typeof el.label.text === 'string' ? el.label.text.toLowerCase() : '';
+
+      const isExactId = elId === targetQuery;
+      const isTextMatch = (elText && (elText.includes(targetQuery) || targetQuery.includes(elText))) ||
+                          (elLabel && (elLabel.includes(targetQuery) || targetQuery.includes(elLabel)));
+
+      if (isExactId || isTextMatch) {
+        matchedElementIds.add(el.id);
+        // If it's a bound text element, also match its parent container shape!
+        if (el.containerId) {
+          matchedElementIds.add(el.containerId);
+        }
+        // If it's a container with bound elements, also match all its bound text elements!
+        if (Array.isArray(el.boundElements)) {
+          for (const b of el.boundElements) {
+            if (b?.id) matchedElementIds.add(b.id);
+          }
+        }
+      }
+    }
+
+    if (matchedElementIds.size === 0) {
+      logToStdio('WEBMCP', `Tool "modify_canvas_node" found no node matching '${args.nodeId}'`);
+      return { status: 'not_found', message: `No node found matching '${args.nodeId}'.` };
+    }
+
+    // 2. Second Pass: Apply modifications to all matched elements and their bound text/containers
+    const updatedElements = rawElements.map((el: any) => {
+      if (!matchedElementIds.has(el.id)) {
+        return normalizeLinearElement(el);
+      }
+
+      const updated = { ...el };
+
+      // Update background fill & ensure solid fillStyle on shapes
+      if (normBg !== undefined) {
+        if (updated.type !== 'arrow' && updated.type !== 'line') {
+          updated.backgroundColor = normBg;
+          if (normBg !== 'transparent') {
+            updated.fillStyle = 'solid';
+          }
+        }
+      }
+
+      // Update stroke color
+      if (normStroke !== undefined) {
+        updated.strokeColor = normStroke;
+      }
+
+      // Update text / label
+      if (args.newLabel) {
+        if (updated.type === 'text') {
+          updated.text = args.newLabel;
+          updated.originalText = args.newLabel;
+        }
+        if (updated.label) {
+          if (typeof updated.label === 'object') {
+            updated.label = { ...updated.label, text: args.newLabel };
+          } else {
+            updated.label = { text: args.newLabel };
+          }
+        }
+      }
+
+      // Bump version & nonce so Excalidraw forcibly re-renders the element
+      updated.version = (updated.version || 1) + 1;
+      updated.versionNonce = Math.floor(Math.random() * 2000000000);
+
+      return normalizeLinearElement(updated);
+    });
+
+    activeCanvasBridge.setElements(updatedElements);
+    logToStdio('WEBMCP', `Tool "modify_canvas_node" updated ${matchedElementIds.size} elements matching '${args.nodeId}'`, {
+      matchedIds: Array.from(matchedElementIds),
+      backgroundColor: normBg,
+      strokeColor: normStroke,
+      newLabel: args.newLabel
+    });
+
+    return {
+      status: 'success',
+      message: `Updated node matching '${args.nodeId}' in-place (${matchedElementIds.size} elements modified).`,
+      matchedElementCount: matchedElementIds.size
+    };
   }
 };
 

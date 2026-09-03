@@ -733,29 +733,9 @@ export function VoiceWorkspace({ onNavigate }: VoiceWorkspaceProps) {
 
         {/* 30% Chat UI with Voice Controls */}
         <div className="chat-container">
-          <div className="chat-header">
-            <div className="chat-header-title">
-              <h2>🎙️ Native Voice Assistant</h2>
-              <span className="session-id-pill" title={sessionId}>
-                {sessionId.substring(0, 14)}...
-              </span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <button
-                className="new-session-btn"
-                onClick={handleNewSession}
-                title="Start a new drawing session"
-              >
-                ➕ New Session
-              </button>
-              <button
-                className="theme-toggle-btn"
-                onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-                title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
-              >
-                {theme === 'dark' ? '☀️' : '🌙'}
-              </button>
-            </div>
+          <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <h3 style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>🎙️ Audio Visual Intel</h3>
+            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }} title={sessionId}>ID: {sessionId.substring(0, 10)}...</span>
           </div>
 
           {/* Interactive Voice Hero Banner */}
