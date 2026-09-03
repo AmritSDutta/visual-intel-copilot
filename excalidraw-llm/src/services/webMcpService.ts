@@ -729,18 +729,20 @@ export async function initWebMcp(): Promise<boolean> {
 
   try {
     for (const tool of webMcpTools) {
+      if (registeredToolNames.has(tool.name)) continue;
       for (const target of targets) {
         try {
           await target.registerTool(tool);
-        } catch (_) {
-          // Ignore duplicate registrations on individual targets
+        } catch (e: any) {
+          if (!String(e?.message || e).includes('Duplicate')) throw e;
         }
       }
       registeredToolNames.add(tool.name);
     }
     logToStdio('WEBMCP', `Initialized and registered ${webMcpTools.length} WebMCP tool(s) on ${targets.length} target(s)`);
     return true;
-  } catch (error) {
+  } catch (error: any) {
+    if (String(error?.message || error).includes('Duplicate')) return true;
     logToStdio('WEBMCP', `Error initializing tools on modelContext: ${String(error)}`);
     return false;
   }
