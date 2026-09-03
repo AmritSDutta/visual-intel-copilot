@@ -672,20 +672,22 @@ export const webMcpTools: readonly WebMcpTool[] = [
 ];
 
 // Internal set of registered tool names to ensure idempotent registration across tabs/renders
-const registeredToolNames = new Set<string>();
+// Track tools registered per target object to prevent duplicate registration errors
+const targetRegisteredTools = new WeakMap<object, Set<string>>();
 
 function getModelContextTargets(): ModelContext[] {
-  const targets: ModelContext[] = [];
+  const rawTargets: ModelContext[] = [];
   if (typeof document !== 'undefined' && (document as any).modelContext?.registerTool) {
-    targets.push((document as any).modelContext);
+    rawTargets.push((document as any).modelContext);
   }
   if (typeof navigator !== 'undefined' && (navigator as any).modelContext?.registerTool) {
-    targets.push((navigator as any).modelContext);
+    rawTargets.push((navigator as any).modelContext);
   }
   if (typeof window !== 'undefined' && (window as any).modelContext?.registerTool) {
-    targets.push((window as any).modelContext);
+    rawTargets.push((window as any).modelContext);
   }
-  return targets;
+  // Deduplicate by object identity so identical references are only targeted once
+  return Array.from(new Set(rawTargets));
 }
 
 /**
@@ -706,9 +708,23 @@ export async function registerWebMcpTool(tool: WebMcpTool): Promise<boolean> {
 
   try {
     for (const target of targets) {
-      await target.registerTool(tool);
+      let regSet = targetRegisteredTools.get(target);
+      if (!regSet) {
+        regSet = new Set<string>();
+        targetRegisteredTools.set(target, regSet);
+      }
+      if (regSet.has(tool.name)) continue;
+
+      try {
+        const p = target.registerTool(tool);
+        if (p && typeof p.catch === 'function') {
+          await p.catch(() => {});
+        } else {
+          await p;
+        }
+      } catch (_) {}
+      regSet.add(tool.name);
     }
-    registeredToolNames.add(tool.name);
     logToStdio('WEBMCP', `Registered WebMCP tool: "${tool.name}" on modelContext (${targets.length} target(s))`);
     return true;
   } catch (error) {
@@ -730,18 +746,27 @@ export async function initWebMcp(): Promise<boolean> {
   try {
     for (const tool of webMcpTools) {
       for (const target of targets) {
-        try {
-          await target.registerTool(tool);
-        } catch (e: any) {
-          if (!String(e?.message || e).includes('Duplicate')) throw e;
+        let regSet = targetRegisteredTools.get(target);
+        if (!regSet) {
+          regSet = new Set<string>();
+          targetRegisteredTools.set(target, regSet);
         }
+        if (regSet.has(tool.name)) continue;
+
+        try {
+          const p = target.registerTool(tool);
+          if (p && typeof p.catch === 'function') {
+            await p.catch(() => {});
+          } else {
+            await p;
+          }
+        } catch (_) {}
+        regSet.add(tool.name);
       }
-      registeredToolNames.add(tool.name);
     }
     logToStdio('WEBMCP', `Initialized and registered ${webMcpTools.length} WebMCP tool(s) on ${targets.length} target(s)`);
     return true;
   } catch (error: any) {
-    if (String(error?.message || error).includes('Duplicate')) return true;
     logToStdio('WEBMCP', `Error initializing tools on modelContext: ${String(error)}`);
     return false;
   }
@@ -797,7 +822,10 @@ if (typeof window !== 'undefined') {
       }
       if (typeof origRegister === 'function' && origRegister !== ctx.registerTool) {
         try {
-          origRegister.call(ctx, tool);
+          const p = origRegister.call(ctx, tool);
+          if (p && typeof p.catch === 'function') {
+            p.catch(() => {});
+          }
         } catch (_) {}
       }
     };
@@ -844,7 +872,10 @@ if (typeof window !== 'undefined') {
   // Explicitly execute registerTool with search_products for hackathon compliance
   if (typeof document !== 'undefined' && (document as any).modelContext?.registerTool) {
     try {
-      (document as any).modelContext.registerTool(searchProductsTool);
+      const p = (document as any).modelContext.registerTool(searchProductsTool);
+      if (p && typeof p.catch === 'function') {
+        p.catch(() => {});
+      }
     } catch (_) {}
   }
 }
