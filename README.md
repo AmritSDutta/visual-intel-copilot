@@ -503,6 +503,42 @@ npm run preview
 
 ---
 
+## 🌐 WebMCP Tools Testing & Credentials Matrix
+
+Validators and evaluators can inspect and execute the **9 WebMCP tools** directly via the browser console (`document.modelContext.listTools()`):
+
+| # | Tool Name | Requires API Key? | Scope / Behavior |
+|---|---|:---:|---|
+| 0 | `get_current_ist_date` | ❌ **No** | Reads system Indian Standard Time (IST) clock |
+| 1 | `inspect_canvas_topology` | ❌ **No** | Reads active nodes, shapes, connectors, and protocols from Excalidraw |
+| 2 | `find_canvas_nodes` | ❌ **No** | Searches for components by name or role (`"redis"`, `"database"`) |
+| 3 | `get_canvas_visual_snapshot` | ❌ **No** | Captures high-resolution base64 PNG for vision analysis |
+| 4 | `read_chat_messages` | ❌ **No** | Reads user notes & recent requirements from chat history |
+| 5 | `modify_canvas_node` | ❌ **No** | Targeted in-place node rename and color update without redrawing |
+| 6 | `append_canvas_elements` | ❌ **No** | Injects new shapes and connector arrows into the active scene |
+| 7 | `clear_canvas` | ❌ **No** | Resets and clears the canvas scene |
+| 8 | `generate_diagram_and_explanation` | 🔑 **Yes (Gemini / Ollama)** | Delegates to AI diagram engine subagent to synthesize new architecture from prompt |
+
+### Quick Console Test Example (Zero Credentials)
+```javascript
+// Test injecting a vector box directly onto the canvas with zero credentials:
+const appendTool = document.modelContext.listTools().find(t => t.name === 'append_canvas_elements');
+await appendTool.execute({
+  elements: [{
+    type: "rectangle",
+    x: 300,
+    y: 200,
+    width: 180,
+    height: 80,
+    label: { text: "WebMCP Gateway" },
+    backgroundColor: "#1e3a8a",
+    strokeColor: "#3b82f6"
+  }]
+});
+```
+
+---
+
 ## ⚠️ Important Advisory for Evaluators & Testers
 
 > [!WARNING]

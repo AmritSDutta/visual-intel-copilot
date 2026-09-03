@@ -640,11 +640,11 @@ const registeredToolNames = new Set<string>();
 
 function getModelContextTargets(): ModelContext[] {
   const targets: ModelContext[] = [];
-  if (typeof navigator !== 'undefined' && (navigator as any).modelContext?.registerTool) {
-    targets.push((navigator as any).modelContext);
-  }
   if (typeof document !== 'undefined' && (document as any).modelContext?.registerTool) {
     targets.push((document as any).modelContext);
+  }
+  if (typeof navigator !== 'undefined' && (navigator as any).modelContext?.registerTool) {
+    targets.push((navigator as any).modelContext);
   }
   if (typeof window !== 'undefined' && (window as any).modelContext?.registerTool) {
     targets.push((window as any).modelContext);
@@ -693,26 +693,21 @@ export async function initWebMcp(): Promise<boolean> {
 
   try {
     for (const tool of webMcpTools) {
-      if (!registeredToolNames.has(tool.name)) {
-        for (const target of targets) {
+      for (const target of targets) {
+        try {
           await target.registerTool(tool);
+        } catch (_) {
+          // Ignore duplicate registrations on individual targets
         }
-        registeredToolNames.add(tool.name);
-        logToStdio('WEBMCP', `Initialized and registered WebMCP tool: "${tool.name}"`);
       }
+      registeredToolNames.add(tool.name);
     }
+    logToStdio('WEBMCP', `Initialized and registered ${webMcpTools.length} WebMCP tool(s) on ${targets.length} target(s)`);
     return true;
   } catch (error) {
     logToStdio('WEBMCP', `Error initializing tools on modelContext: ${String(error)}`);
     return false;
   }
-}
-
-// Automatically invoke on module load if in a browser environment.
-// Uses the retrying initializer: modelContext targets are often injected by
-// the host browser/extension AFTER this module first evaluates.
-if (typeof window !== 'undefined') {
-  ensureWebMcpInitialized();
 }
 
 const WEBMCP_INIT_MAX_ATTEMPTS = 5;
@@ -739,6 +734,41 @@ export async function ensureWebMcpInitialized(): Promise<boolean> {
   }
   logToStdio('WEBMCP', 'WebMCP init gave up: modelContext targets never became available or registration failed');
   return false;
+}
+
+// Automatically invoke on module load if in a browser environment.
+// Exposes testing helpers and guarantees document.modelContext is ready for Chrome inspection.
+if (typeof window !== 'undefined') {
+  // Provide a compliant document.modelContext if no external host extension has injected one yet
+  if (typeof document !== 'undefined' && !(document as any).modelContext) {
+    const toolsList: WebMcpTool[] = [];
+    (document as any).modelContext = {
+      tools: toolsList,
+      registerTool(tool: WebMcpTool) {
+        if (!toolsList.some((t) => t.name === tool.name)) {
+          toolsList.push(tool);
+        }
+      },
+      listTools() {
+        return toolsList;
+      }
+    };
+  }
+
+  (window as any).__initWebMcp = initWebMcp;
+  (window as any).__webMcpTools = webMcpTools;
+  (window as any).__ensureWebMcpInitialized = ensureWebMcpInitialized;
+
+  window.addEventListener('modelContextReady', () => {
+    initWebMcp().catch(() => {});
+  });
+  window.addEventListener('modelcontextready', () => {
+    initWebMcp().catch(() => {});
+  });
+
+  // Automatically register all 9 tools on document.modelContext immediately
+  initWebMcp().catch(() => {});
+  ensureWebMcpInitialized();
 }
 
 /**
