@@ -69,13 +69,6 @@ export function AppHeader({
           >
             🎙️ Voice Mode
           </button>
-          <button
-            className={`route-pill ${currentPath === '/agentic' ? 'active' : ''}`}
-            onClick={() => onNavigate?.('/agentic')}
-            title="Live Audio Studio & Multi-Agent Architecture"
-          >
-            🤖 Audio Studio
-          </button>
         </div>
 
         {/* Unified Audio Signal Indicator in Header */}
