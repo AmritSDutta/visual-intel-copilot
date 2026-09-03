@@ -100,5 +100,18 @@ export function getSystemInstruction(rawLibraryItems?: any[]): string {
  * The agent decides ITSELF when to call a tool; tools are the subagents + canvas ops.
  */
 export function getLiveAgentSystemInstruction(greeting: string): string {
-  return fillTemplate(loadTemplate('liveAgent'), { GREETING: greeting });
+  return fillTemplate(loadTemplate('liveAgent'), { GREETING: greeting, ...currentDateContext() });
+}
+
+/**
+ * 💬 Canvas orchestrator persona — the tool-calling base agent for the canvas chat panel.
+ */
+export function getCanvasOrchestratorSystemInstruction(): string {
+  return fillTemplate(loadTemplate('canvasOrchestrator'), currentDateContext());
+}
+
+/** Fills the {{CURRENT_DATE}} token shared by both base-agent prompts (IST, matching get_current_ist_date). */
+function currentDateContext(): Record<string, string> {
+  const istDate = new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'full' });
+  return { CURRENT_DATE: `${istDate} (Indian Standard Time)` };
 }

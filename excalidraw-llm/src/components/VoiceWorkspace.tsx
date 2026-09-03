@@ -10,6 +10,7 @@ import { useAuth } from '../context/AuthContext';
 import { saveCloudSessionTurn, getCloudSessionsSummary, getCloudSessionTurns, deleteCloudSession } from '../services/supabaseDbService';
 import { AppHeader } from './AppHeader';
 import { registerActiveCanvasBridge } from '../services/webMcpService';
+import { MAX_INPUT_CHARS, clampInput, isVoiceLiveEligible } from '../config/limits';
 import { getItemEncrypted, setItemEncrypted, removeItem } from '../utils/cryptoStorage';
 import {
   createSpeechRecognizer,
@@ -523,7 +524,9 @@ export function VoiceWorkspace({ onNavigate }: VoiceWorkspaceProps) {
     // 🎙️ Primary Mode: Gemini Live Audio Agent Orchestrator
     // The Audio Specialist directly orchestrates diagram synthesis via its generate_diagram_and_explanation tool,
     // modifies components via modify_canvas_node, or answers conversationally!
-    if (!isMuted && apiKey.trim()) {
+    // Long pasted documents (>VOICE_LIVE_MAX_CHARS, e.g. READMEs) skip the Live session — it's built for
+    // short spoken utterances — and use the direct diagram path below instead.
+    if (!isMuted && apiKey.trim() && isVoiceLiveEligible(query)) {
       speakNativeAudioResponse(
         query,
         query || '', // Direct prompt mode for real-time Live API audio
@@ -851,7 +854,7 @@ export function VoiceWorkspace({ onNavigate }: VoiceWorkspaceProps) {
                 className="chat-input"
                 placeholder={isListening ? 'Listening... Speak now' : 'Speak or type your diagram prompt...'}
                 value={input}
-                onChange={(e) => setInput(e.target.value)}
+                onChange={(e) => setInput(clampInput(e.target.value))}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
@@ -860,6 +863,7 @@ export function VoiceWorkspace({ onNavigate }: VoiceWorkspaceProps) {
                 }}
                 rows={3}
                 disabled={isLoading}
+                maxLength={MAX_INPUT_CHARS}
               />
               <button
                 className="send-btn"
@@ -878,7 +882,9 @@ export function VoiceWorkspace({ onNavigate }: VoiceWorkspaceProps) {
               </button>
             </div>
             <div className="chat-footer-hint">
-              Tap 🎙️ to talk • Enter to send • Native Audio answering active
+              {input.length >= MAX_INPUT_CHARS
+                ? `⚠ Input limit reached — ${MAX_INPUT_CHARS.toLocaleString()} characters max`
+                : 'Tap 🎙️ to talk • Enter to send • Native Audio answering active'}
             </div>
           </div>
         </div>

@@ -1,5 +1,6 @@
 import type { RefObject, KeyboardEvent } from 'react'
 import type { Message } from '../types/chat'
+import { MAX_INPUT_CHARS, clampInput } from '../config/limits'
 
 export interface ChatPanelProps {
   sessionId: string
@@ -78,10 +79,11 @@ export function ChatPanel({
             className="chat-input"
             placeholder={isLoading ? 'Generating diagram...' : 'Ask AI to draw or edit...'}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => setInput(clampInput(e.target.value))}
             onKeyDown={onKeyDown}
             disabled={isLoading}
             rows={3}
+            maxLength={MAX_INPUT_CHARS}
           />
           <button
             className="send-btn"
@@ -100,7 +102,9 @@ export function ChatPanel({
           </button>
         </div>
         <div className="chat-footer-hint">
-          Press Enter to send • Shift+Enter for new line
+          {input.length >= MAX_INPUT_CHARS
+            ? `⚠ Input limit reached — ${MAX_INPUT_CHARS.toLocaleString()} characters max`
+            : 'Press Enter to send • Shift+Enter for new line'}
         </div>
       </div>
     </div>
