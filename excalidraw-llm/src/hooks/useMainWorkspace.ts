@@ -51,33 +51,6 @@ export function useMainWorkspace() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  // Register active canvas bridge with WebMCP service
-  useEffect(() => {
-    if (!excalidrawAPI) return
-
-    const unregister = registerActiveCanvasBridge({
-      getElements: () => (excalidrawAPI.getSceneElements() as any[]) || [],
-      setElements: (elements: any[]) => {
-        excalidrawAPI.updateScene({
-          elements,
-          commitToHistory: true,
-          scrollToContent: true
-        })
-      },
-      getSnapshotBase64: async () => {
-        return await getCanvasSnapshotBase64()
-      },
-      getChatMessages: () => {
-        return messages.map((m) => ({
-          role: m.sender === 'user' ? 'user' : 'assistant',
-          content: m.text
-        }))
-      }
-    })
-
-    return () => unregister()
-  }, [excalidrawAPI, messages])
-
   // Session history sub-hook
   const history = useSessionHistory(
     user,
@@ -120,6 +93,108 @@ export function useMainWorkspace() {
       setMessages(restoredMessages)
     }
   )
+
+  // Main diagram generation subagent executor
+  const executeDiagram = async (promptQuery: string): Promise<{ chatReply: string; elements: any[] }> => {
+    let result: { chatReply: string; elements: any[] }
+
+    if (settings.provider === 'ollama') {
+      result = await generateDiagramWithOllama(
+        promptQuery,
+        settings.ollamaEndpoint,
+        settings.ollamaModel,
+        settings.ollamaApiKey,
+        rawLibraryItems as any[]
+      )
+    } else {
+      result = await generateDiagramFromPrompt(
+        promptQuery,
+        settings.apiKey,
+        settings.modelName || 'gemini-3.1-flash-lite',
+        rawLibraryItems as any[]
+      )
+    }
+
+    if (excalidrawAPI && Array.isArray(result.elements) && result.elements.length > 0) {
+      excalidrawAPI.updateScene({
+        elements: result.elements,
+        appState: {
+          selectedElementIds: {}
+        },
+        commitToHistory: true,
+        scrollToContent: true
+      })
+    }
+
+    // Capture PNG snapshot for session_turns record
+    let snapshotDataUrl = ''
+    try {
+      const base64 = await getCanvasSnapshotBase64()
+      if (base64) {
+        snapshotDataUrl = `data:image/png;base64,${base64}`
+      }
+    } catch (snapshotErr) {
+      console.warn('Failed to capture snapshot for session turn:', snapshotErr)
+    }
+
+    const turnId = `turn_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`
+    const record: SessionTurnRecord = {
+      session_id: history.sessionId,
+      turn_id: turnId,
+      user_prompt: promptQuery,
+      chat_reply: result.chatReply,
+      image_blob: snapshotDataUrl,
+      created_at: new Date().toISOString()
+    }
+
+    // Active Session local cache
+    await saveSessionTurn(record).catch((e) => console.warn('Failed to auto-save local turn cache:', e))
+
+    // Cloud Persistence with RLS Authorization
+    if (user) {
+      await saveCloudSessionTurn(user.id, record).catch((e) => console.error('Failed to save turn to Supabase cloud:', e))
+    }
+
+    const aiReply: Message = {
+      id: (Date.now() + 1).toString(),
+      sender: 'assistant',
+      text: result.chatReply,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    }
+    setMessages((prev) => [...prev, aiReply])
+
+    return result
+  }
+
+  // Register active canvas bridge with WebMCP service
+  useEffect(() => {
+    if (!excalidrawAPI) return
+
+    const unregister = registerActiveCanvasBridge({
+      getElements: () => (excalidrawAPI.getSceneElements() as any[]) || [],
+      setElements: (elements: any[]) => {
+        excalidrawAPI.updateScene({
+          elements,
+          commitToHistory: true,
+          scrollToContent: true
+        })
+      },
+      generateDiagram: async (promptText: string) => {
+        return await executeDiagram(promptText)
+      },
+      getSnapshotBase64: async () => {
+        return await getCanvasSnapshotBase64()
+      },
+      getChatMessages: () => {
+        return messages.map((m) => ({
+          role: m.sender === 'user' ? 'user' : 'assistant',
+          content: m.text
+        }))
+      }
+    })
+
+    return () => unregister()
+  }, [excalidrawAPI, messages, settings.provider, settings.ollamaEndpoint, settings.ollamaModel, settings.ollamaApiKey, settings.apiKey, settings.modelName, rawLibraryItems, history.sessionId, user])
 
   // Theme synchronization
   useEffect(() => {
@@ -245,72 +320,7 @@ export function useMainWorkspace() {
     setIsLoading(true)
 
     try {
-      let result: { chatReply: string; elements: unknown[] }
-
-      if (settings.provider === 'ollama') {
-        result = await generateDiagramWithOllama(
-          query,
-          settings.ollamaEndpoint,
-          settings.ollamaModel,
-          settings.ollamaApiKey,
-          rawLibraryItems as any[]
-        )
-      } else {
-        result = await generateDiagramFromPrompt(
-          query,
-          settings.apiKey,
-          settings.modelName || 'gemini-3.1-flash-lite',
-          rawLibraryItems as any[]
-        )
-      }
-
-      if (excalidrawAPI && Array.isArray(result.elements) && result.elements.length > 0) {
-        excalidrawAPI.updateScene({
-          elements: result.elements,
-          appState: {
-            selectedElementIds: {}
-          },
-          commitToHistory: true,
-          scrollToContent: true
-        })
-      }
-
-      // Capture PNG snapshot for session_turns record
-      let snapshotDataUrl = ''
-      try {
-        const base64 = await getCanvasSnapshotBase64()
-        if (base64) {
-          snapshotDataUrl = `data:image/png;base64,${base64}`
-        }
-      } catch (snapshotErr) {
-        console.warn('Failed to capture snapshot for session turn:', snapshotErr)
-      }
-
-      const turnId = `turn_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`
-      const record: SessionTurnRecord = {
-        session_id: history.sessionId,
-        turn_id: turnId,
-        user_prompt: query,
-        chat_reply: result.chatReply,
-        image_blob: snapshotDataUrl,
-        created_at: new Date().toISOString()
-      }
-
-      // Active Session local cache
-      await saveSessionTurn(record).catch((e) => console.warn('Failed to auto-save local turn cache:', e))
-
-      // Cloud Persistence with RLS Authorization
-      if (user) {
-        await saveCloudSessionTurn(user.id, record).catch((e) => console.error('Failed to save turn to Supabase cloud:', e))
-      }
-
-      const aiReply: Message = {
-        id: (Date.now() + 1).toString(),
-        sender: 'assistant',
-        text: result.chatReply,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      }
-      setMessages((prev) => [...prev, aiReply])
+      await executeDiagram(query)
     } catch (error: unknown) {
       console.error('Diagram generation error:', error)
       const errorMsgText = error instanceof Error ? error.message : 'Failed to generate diagram.'

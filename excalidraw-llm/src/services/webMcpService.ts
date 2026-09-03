@@ -71,6 +71,7 @@ export interface CanvasTopologySummary {
 export interface ActiveCanvasBridge {
   getElements: () => any[];
   setElements: (elements: any[]) => void;
+  generateDiagram?: (prompt: string) => Promise<{ chatReply: string; elements: any[] }>;
   getSnapshotBase64?: () => Promise<string | null>;
   getChatMessages?: () => Array<{ role: string; content: string; badge?: string }>;
 }
@@ -475,6 +476,50 @@ export const clearCanvasTool: WebMcpTool = {
   }
 };
 
+export const generateDiagramAndExplanationTool: WebMcpTool = {
+  name: 'generate_diagram_and_explanation',
+  description: 'Synthesizes a complete visual architecture diagram on the Excalidraw canvas and produces a structured technical breakdown. Use this tool when the user asks to draw, design, or generate an architecture diagram.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      prompt: {
+        type: 'string',
+        description: 'The architectural or system design prompt describing what diagram and components to generate (e.g. "Draw an event-driven payment system with Kafka, Redis, and PostgreSQL").'
+      }
+    },
+    required: ['prompt']
+  },
+  execute: async (params: { prompt?: string }) => {
+    const promptText = (params?.prompt || '').trim();
+    if (!promptText) {
+      return { error: 'Prompt is required for diagram generation' };
+    }
+
+    if (!activeCanvasBridge) {
+      return { error: 'No active canvas is mounted.' };
+    }
+
+    logToStdio('WEBMCP', `Tool "generate_diagram_and_explanation" invoked with prompt: "${promptText}"`);
+
+    if (activeCanvasBridge.generateDiagram) {
+      try {
+        const result = await activeCanvasBridge.generateDiagram(promptText);
+        return {
+          status: 'success',
+          summary: `Successfully generated architecture diagram with ${result.elements?.length || 0} visual components on the canvas.`,
+          chatReply: result.chatReply,
+          componentCount: result.elements?.length || 0
+        };
+      } catch (err: any) {
+        logToStdio('WEBMCP', `Tool "generate_diagram_and_explanation" error: ${String(err)}`);
+        return { error: `Diagram generation failed: ${String(err?.message || err)}` };
+      }
+    }
+
+    return { error: 'Diagram generation delegate is not configured on the active workspace.' };
+  }
+};
+
 // ── Registry of all WebMCP tools ───────────────────────────────────────
 
 export const webMcpTools: readonly WebMcpTool[] = [
@@ -485,7 +530,8 @@ export const webMcpTools: readonly WebMcpTool[] = [
   readChatMessagesTool,
   modifyCanvasNodeTool,
   appendCanvasElementsTool,
-  clearCanvasTool
+  clearCanvasTool,
+  generateDiagramAndExplanationTool
 ];
 
 // Internal set of registered tool names to ensure idempotent registration across tabs/renders

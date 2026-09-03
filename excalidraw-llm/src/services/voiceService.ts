@@ -1,5 +1,6 @@
-import { GoogleGenAI, Modality } from '@google/genai';
+import { GoogleGenAI, Modality, Type } from '@google/genai';
 import { StreamingAudioPlayer } from '../aiServices/audioUtils';
+import { webMcpTools } from './webMcpService';
 
 /**
  * ============================================================================
@@ -186,6 +187,11 @@ export function stopAudioResponse(): void {
       window.speechSynthesis.cancel();
     } catch {}
   }
+  if (activeLiveSession?.player) {
+    try {
+      activeLiveSession.player.stop();
+    } catch {}
+  }
   if (activeAudioElement) {
     try {
       activeAudioElement.pause();
@@ -209,10 +215,40 @@ export function stopAudioResponse(): void {
   activeSpeechUtterance = null;
 }
 
+interface ActiveLiveSessionState {
+  session: any;
+  apiKey: string;
+  model: string;
+  voiceName: string;
+  player: StreamingAudioPlayer;
+  isOpen: boolean;
+  onEnd?: () => void;
+}
+
+let activeLiveSession: ActiveLiveSessionState | null = null;
+
+export function isLiveSessionConnected(): boolean {
+  return !!(activeLiveSession && activeLiveSession.isOpen && activeLiveSession.session);
+}
+
+export function closePersistentLiveSession(): void {
+  if (activeLiveSession) {
+    console.log('[Native Audio] Closing persistent Live API session...');
+    try {
+      activeLiveSession.player.stop();
+      activeLiveSession.player.close();
+    } catch {}
+    try {
+      activeLiveSession.session?.close?.();
+    } catch {}
+    activeLiveSession = null;
+  }
+}
+
 /**
- * Opens a Gemini Live API WebSocket session, sends text, and plays PCM audio
- * chunks immediately as they stream back from the server.
- * Returns true if audio was successfully streamed, false otherwise.
+ * Sends a message to a persistent Gemini Live API WebSocket session.
+ * Reconnects lazily only if disconnected or if credentials/model changed.
+ * Avoids opening multiple concurrent WebSockets and prevents multiple voice agents from talking simultaneously.
  */
 async function speakWithLiveApi(
   text: string,
@@ -222,71 +258,190 @@ async function speakWithLiveApi(
   voiceName: string = 'Puck'
 ): Promise<boolean> {
   try {
-    console.log(`[Native Audio] Live API (Streaming) → ${liveModel} (${voiceName})`);
-    const ai = new GoogleGenAI({ apiKey, apiVersion: 'v1alpha' });
-    let player: StreamingAudioPlayer | null = null;
-    let hasAudio = false;
+    // 1. If an active session is already connected with matching settings, reuse it immediately
+    if (
+      activeLiveSession &&
+      activeLiveSession.isOpen &&
+      activeLiveSession.session &&
+      activeLiveSession.apiKey === apiKey &&
+      activeLiveSession.model === liveModel &&
+      activeLiveSession.voiceName === voiceName
+    ) {
+      console.log(`[Native Audio] Reusing active Live API session for model ${liveModel}`);
+      // Stop previous audio if still playing to prevent overlapping speech
+      activeLiveSession.player.stop();
+      activeLiveSession.onEnd = onEnd;
 
-    await new Promise<void>((resolve, reject) => {
+      activeLiveSession.session.sendClientContent({
+        turns: [{ role: 'user', parts: [{ text }] }],
+        turnComplete: true
+      });
+      return true;
+    }
+
+    // 2. Close stale session if settings changed or previously disconnected
+    if (activeLiveSession) {
+      closePersistentLiveSession();
+    }
+
+    // 3. Establish persistent connection
+    console.log(`[Native Audio] Establishing persistent Live API session → ${liveModel} (${voiceName})`);
+    const ai = new GoogleGenAI({ apiKey, apiVersion: 'v1alpha' });
+
+    const player = new StreamingAudioPlayer(24000, () => {
+      activeLiveSession?.onEnd?.();
+    });
+
+    const functionDeclarations = webMcpTools.map((t) => ({
+      name: t.name,
+      description: t.description,
+      parameters: {
+        type: Type.OBJECT,
+        properties: (t.inputSchema.properties || {}) as any,
+        required: (t.inputSchema.required as string[]) || []
+      }
+    }));
+
+    const connected = await new Promise<boolean>((resolve, reject) => {
+      let isResolved = false;
+
       ai.live.connect({
         model: liveModel,
         config: {
           responseModalities: [Modality.AUDIO],
           speechConfig: {
             voiceConfig: { prebuiltVoiceConfig: { voiceName } }
-          }
+          },
+          systemInstruction: {
+            parts: [{
+              text: `You are Inquisitive Voice Assistant, a friendly and intelligent visual architecture co-pilot.
+You have real-time WebMCP tools to inspect, generate, and manipulate the live Excalidraw canvas whiteboard while speaking:
+1. When the user asks to draw, design, or generate a system architecture or visual diagram, call the 'generate_diagram_and_explanation' tool with their requirements.
+2. When the user asks about what is currently on the whiteboard, call 'inspect_canvas_topology' or 'find_canvas_nodes' to inspect the actual components.
+3. When the user asks for in-place modifications (renaming a box, changing colors, repositioning), call 'modify_canvas_node'.
+4. When the user asks to add extra shapes or connectors, call 'append_canvas_elements'.
+5. When the user asks general technical or conceptual questions, answer conversationally in natural, engaging speech without generating diagrams unless requested.
+Always acknowledge tool actions smoothly and provide a clear, concise verbal summary of what was drawn or modified.`
+            }]
+          },
+          tools: functionDeclarations.length > 0 ? [{ functionDeclarations }] : undefined
         },
         callbacks: {
           onopen: () => {
-            console.log(`[Native Audio] Live API WebSocket opened for model ${liveModel}`);
-            player = new StreamingAudioPlayer(24000, () => {
-              onEnd?.();
-              resolve();
-            });
+            console.log(`[Native Audio] Live API WebSocket opened with ${webMcpTools.length} WebMCP tools for model ${liveModel}`);
           },
-          onmessage: (msg: unknown) => {
+          onmessage: async (msg: unknown) => {
             const m = msg as {
+              toolCall?: {
+                functionCalls?: Array<{
+                  id?: string;
+                  name: string;
+                  args?: Record<string, any>;
+                }>;
+              };
               serverContent?: {
                 modelTurn?: { parts?: Array<{ inlineData?: { data?: string } }> };
                 turnComplete?: boolean;
               };
             };
+
+            // 🛠️ Handle Live Tool Calls from the Audio Specialist
+            if (m.toolCall?.functionCalls && m.toolCall.functionCalls.length > 0) {
+              console.log('[Native Audio] Voice Agent called WebMCP tools:', m.toolCall.functionCalls);
+              const responses = [];
+              for (const call of m.toolCall.functionCalls) {
+                const tool = webMcpTools.find((t) => t.name === call.name);
+                let toolResult: any = { error: `Tool "${call.name}" not found` };
+                if (tool) {
+                  try {
+                    toolResult = await tool.execute(call.args || {});
+                  } catch (err: any) {
+                    toolResult = { error: String(err?.message || err) };
+                  }
+                }
+                responses.push({
+                  id: call.id || call.name,
+                  name: call.name,
+                  response: toolResult
+                });
+              }
+
+              if (activeLiveSession?.session) {
+                try {
+                  activeLiveSession.session.sendToolResponse({
+                    functionResponses: responses
+                  });
+                } catch (toolErr) {
+                  console.warn('[Native Audio] Failed to send tool response:', toolErr);
+                }
+              }
+            }
+
             for (const part of m.serverContent?.modelTurn?.parts ?? []) {
               if (part.inlineData?.data) {
-                hasAudio = true;
-                player?.feed(part.inlineData.data);
+                player.feed(part.inlineData.data);
               }
             }
             if (m.serverContent?.turnComplete) {
-              player?.signalGenerationComplete();
+              player.signalGenerationComplete();
             }
           },
           onerror: (e: unknown) => {
             console.warn(`[Native Audio] Live API error on ${liveModel}:`, e);
-            player?.close();
-            reject(e);
+            if (activeLiveSession) {
+              activeLiveSession.isOpen = false;
+              activeLiveSession.session = null;
+            }
+            if (!isResolved) {
+              isResolved = true;
+              reject(e);
+            }
           },
           onclose: (e?: any) => {
             const code = e?.code ?? 'unknown';
             const reason = e?.reason || 'No reason provided';
             console.log(`[Native Audio] Live API WebSocket closed for model ${liveModel} [code: ${code}, reason: "${reason}"]`);
-            player?.signalGenerationComplete();
+            if (activeLiveSession) {
+              activeLiveSession.isOpen = false;
+              activeLiveSession.session = null;
+            }
+            player.signalGenerationComplete();
           }
         }
       }).then((session) => {
+        activeLiveSession = {
+          session,
+          apiKey,
+          model: liveModel,
+          voiceName,
+          player,
+          isOpen: true,
+          onEnd
+        };
         session.sendClientContent({
           turns: [{ role: 'user', parts: [{ text }] }],
           turnComplete: true
         });
+        if (!isResolved) {
+          isResolved = true;
+          resolve(true);
+        }
       }).catch((e) => {
-        player?.close();
-        reject(e);
+        player.close();
+        if (activeLiveSession) {
+          activeLiveSession.isOpen = false;
+          activeLiveSession.session = null;
+        }
+        if (!isResolved) {
+          isResolved = true;
+          reject(e);
+        }
       });
     });
 
-    return hasAudio;
+    return connected;
   } catch (e) {
-    console.warn(`[Native Audio] Live API ${liveModel} failed:`, e);
+    console.warn(`[Native Audio] Live API ${liveModel} connection failed:`, e);
     return false;
   }
 }

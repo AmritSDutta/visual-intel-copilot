@@ -10,10 +10,13 @@ import { useAuth } from '../context/AuthContext';
 import { saveCloudSessionTurn, getCloudSessionsSummary, getCloudSessionTurns, deleteCloudSession } from '../services/supabaseDbService';
 import { AppHeader } from './AppHeader';
 import { registerActiveCanvasBridge } from '../services/webMcpService';
+import { getItemEncrypted } from '../utils/cryptoStorage';
 import {
   createSpeechRecognizer,
   speakNativeAudioResponse,
+  fallbackSpeechSynthesis,
   stopAudioResponse,
+  closePersistentLiveSession,
   unlockAudioContext,
   isSpeechRecognitionSupported,
   GEMINI_LIVE_MODELS,
@@ -112,6 +115,38 @@ export function VoiceWorkspace({ onNavigate }: VoiceWorkspaceProps) {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Asynchronously hydrate encrypted keys from localStorage (AES-GCM-256) on initial load
+  useEffect(() => {
+    let mounted = true;
+    async function hydrateEncryptedKeys() {
+      try {
+        const [decryptedGemini, decryptedOllama] = await Promise.all([
+          getItemEncrypted('GEMINI_API_KEY'),
+          getItemEncrypted('OLLAMA_API_KEY')
+        ]);
+        if (!mounted) return;
+        if (decryptedGemini && !apiKey) {
+          setApiKey(decryptedGemini);
+        }
+        if (decryptedOllama && !ollamaApiKey) {
+          setOllamaApiKey(decryptedOllama);
+        }
+      } catch (err) {
+        console.warn('[VoiceWorkspace] Failed to hydrate encrypted keys:', err);
+      }
+    }
+    hydrateEncryptedKeys();
+    return () => { mounted = false; };
+  }, []);
+
+  // Clean up persistent Live API WebSocket session on component unmount
+  useEffect(() => {
+    return () => {
+      stopAudioResponse();
+      closePersistentLiveSession();
+    };
+  }, []);
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
@@ -171,6 +206,60 @@ export function VoiceWorkspace({ onNavigate }: VoiceWorkspaceProps) {
       });
   }, [excalidrawAPI]);
 
+  // Main diagram & text generation subagent executor
+  const executeDiagramGeneration = async (promptQuery: string): Promise<{ chatReply: string; elements: any[] }> => {
+    let result: { chatReply: string; elements: any[] };
+    if (provider === 'ollama') {
+      result = await generateDiagramWithOllama(`explain with diagram, ${promptQuery}`, ollamaEndpoint, ollamaModel, ollamaApiKey, rawLibraryItems);
+    } else {
+      result = await generateDiagramFromPrompt(`explain with diagram, ${promptQuery}`, apiKey, modelName || 'gemini-2.5-flash', rawLibraryItems);
+    }
+
+    if (excalidrawAPI) {
+      (excalidrawAPI as { updateScene: (opt: unknown) => void }).updateScene({
+        elements: result.elements,
+        appState: { selectedElementIds: {} },
+        commitToHistory: true,
+        scrollToContent: true
+      });
+    }
+
+    // Capture snapshot & record turn
+    let snapshotDataUrl = '';
+    try {
+      const base64 = await getCanvasSnapshotBase64();
+      if (base64) {
+        snapshotDataUrl = `data:image/png;base64,${base64}`;
+      }
+    } catch (e) {}
+
+    const turnId = `turn_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const record: SessionTurnRecord = {
+      session_id: sessionId,
+      turn_id: turnId,
+      user_prompt: promptQuery,
+      chat_reply: result.chatReply,
+      image_blob: snapshotDataUrl,
+      created_at: new Date().toISOString()
+    };
+
+    await saveSessionTurn(record).catch((e) => console.warn('Failed to save local turn:', e));
+    if (user) {
+      await saveCloudSessionTurn(user.id, record).catch((e) => console.error('Failed to save cloud turn:', e));
+    }
+
+    const aiReply: Message = {
+      id: (Date.now() + 1).toString(),
+      sender: 'assistant',
+      text: result.chatReply,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      isVoiceReply: true
+    };
+    setMessages((prev) => [...prev, aiReply]);
+
+    return result;
+  };
+
   // Register active canvas bridge with WebMCP service
   useEffect(() => {
     if (!excalidrawAPI) return;
@@ -188,6 +277,9 @@ export function VoiceWorkspace({ onNavigate }: VoiceWorkspaceProps) {
           scrollToContent: true
         });
       },
+      generateDiagram: async (promptText: string) => {
+        return await executeDiagramGeneration(promptText);
+      },
       getSnapshotBase64: async () => {
         return await getCanvasSnapshotBase64();
       },
@@ -200,7 +292,7 @@ export function VoiceWorkspace({ onNavigate }: VoiceWorkspaceProps) {
     });
 
     return () => unregister();
-  }, [excalidrawAPI, messages]);
+  }, [excalidrawAPI, messages, provider, ollamaEndpoint, ollamaModel, ollamaApiKey, apiKey, modelName, rawLibraryItems, sessionId, user]);
 
   const getCanvasSnapshotBase64 = async (): Promise<string | null> => {
     if (!excalidrawAPI) return null;
@@ -228,6 +320,7 @@ export function VoiceWorkspace({ onNavigate }: VoiceWorkspaceProps) {
 
   const handleNewSession = () => {
     stopAudioResponse();
+    closePersistentLiveSession();
     const newSid = `voice_sess_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     setSessionId(newSid);
     setMessages([
@@ -412,98 +505,63 @@ export function VoiceWorkspace({ onNavigate }: VoiceWorkspaceProps) {
     }
 
     setIsLoading(true);
-    setVoiceStatus('⚡ Live Audio streaming & Diagram generating...');
+    setVoiceStatus('⚡ Audio Agent processing...');
 
-    // 🎙️ Track 1: Trigger Live Audio Stream in Parallel (Non-blocking)
-    if (!isMuted && provider === 'gemini' && apiKey.trim()) {
+    // 🎙️ Primary Mode: Gemini Live Audio Agent Orchestrator
+    // The Audio Specialist directly orchestrates diagram synthesis via its generate_diagram_and_explanation tool,
+    // modifies components via modify_canvas_node, or answers conversationally!
+    if (!isMuted && apiKey.trim()) {
       speakNativeAudioResponse(
         query,
         query || '', // Direct prompt mode for real-time Live API audio
-        apiKey,
+        apiKey.trim(),
         modelName || SUPPORTED_MODEL_IDS[0],
         () => setIsSpeaking(true),
         () => {
           setIsSpeaking(false);
+          setIsLoading(false);
           setVoiceStatus('Ready for voice prompt');
         },
         (err) => {
           console.warn('Voice error:', err);
           setIsSpeaking(false);
+          setIsLoading(false);
           setVoiceStatus('Ready for voice prompt');
         },
         browserSpeechEnabled
       );
-    }
-
-    // 🎨 Track 2: Diagram & Text Generation Track (Parallel)
-    try {
-      let result: { chatReply: string; elements: unknown[] };
-
-      // Normal models continue generating diagrams as usual
-      if (provider === 'ollama') {
-        result = await generateDiagramWithOllama(`explain with diagram, ${query}`, ollamaEndpoint, ollamaModel, ollamaApiKey, rawLibraryItems);
-      } else {
-        result = await generateDiagramFromPrompt(`explain with diagram, ${query}`, apiKey, modelName || 'gemini-2.5-flash', rawLibraryItems);
-      }
-
-      if (excalidrawAPI) {
-        (excalidrawAPI as { updateScene: (opt: unknown) => void }).updateScene({
-          elements: result.elements,
-          appState: { selectedElementIds: {} },
-          commitToHistory: true,
-          scrollToContent: true
-        });
-      }
-
-      // Capture snapshot
-      let snapshotDataUrl = '';
+    } else {
+      // 🎨 Fallback Mode: Direct Subagent Diagram Generation & Browser Speech Fallback
       try {
-        const base64 = await getCanvasSnapshotBase64();
-        if (base64) {
-          snapshotDataUrl = `data:image/png;base64,${base64}`;
+        const result = await executeDiagramGeneration(query);
+        if (!isMuted && result.chatReply) {
+          fallbackSpeechSynthesis(
+            result.chatReply,
+            () => {
+              setIsSpeaking(false);
+              setVoiceStatus('Ready for voice prompt');
+            },
+            (err) => {
+              console.warn('Browser speech synthesis warning:', err);
+              setIsSpeaking(false);
+              setVoiceStatus('Ready for voice prompt');
+            }
+          );
         }
-      } catch (e) {}
-
-      const turnId = `turn_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-      const record: SessionTurnRecord = {
-        session_id: sessionId,
-        turn_id: turnId,
-        user_prompt: query,
-        chat_reply: result.chatReply,
-        image_blob: snapshotDataUrl,
-        created_at: new Date().toISOString()
-      };
-
-      await saveSessionTurn(record).catch((e) => console.warn('Failed to save local turn:', e));
-      if (user) {
-        await saveCloudSessionTurn(user.id, record).catch((e) => console.error('Failed to save cloud turn:', e));
+      } catch (error: unknown) {
+        const err = error as Error;
+        console.error('Diagram generation error:', err);
+        const errorMsg: Message = {
+          id: (Date.now() + 1).toString(),
+          sender: 'assistant',
+          text: `❌ Error: ${err?.message || 'Failed to generate diagram.'}`,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        };
+        setMessages((prev) => [...prev, errorMsg]);
+        setVoiceStatus('Error generating response');
+      } finally {
+        setIsLoading(false);
       }
-
-      const aiReply: Message = {
-        id: (Date.now() + 1).toString(),
-        sender: 'assistant',
-        text: result.chatReply,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        isVoiceReply: true
-      };
-      setMessages((prev) => [...prev, aiReply]);
-
-      if (isMuted) {
-        setVoiceStatus('Ready for voice prompt (Muted)');
-      }
-    } catch (error: unknown) {
-      const err = error as Error;
-      console.error('Diagram generation error:', err);
-      const errorMsg: Message = {
-        id: (Date.now() + 1).toString(),
-        sender: 'assistant',
-        text: `❌ Error: ${err?.message || 'Failed to generate diagram.'}`,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      };
-      setMessages((prev) => [...prev, errorMsg]);
-      setVoiceStatus('Error generating response');
-    } finally {
-      setIsLoading(false);
     }
   };
 
