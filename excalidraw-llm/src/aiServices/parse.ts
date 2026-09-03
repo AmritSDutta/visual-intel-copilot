@@ -1,5 +1,5 @@
 import { convertToExcalidrawElements } from '@excalidraw/excalidraw';
-import { hydrateSkeletonsWithLibrary, sanitizeSkeletonsForExcalidraw } from '../utils/libraryIndexer';
+import { hydrateSkeletonsWithLibrary, sanitizeSkeletonsForExcalidraw, normalizeLinearElement } from '../utils/libraryIndexer';
 import { repairAndParseJson } from '../utils/jsonRepair';
 import { stripMarkdown } from './prompts';
 import type { AIDiagramResult } from './types';
@@ -55,7 +55,7 @@ export function processResponseJson(cleanJsonStr: string, rawLibraryItems: any[]
   const { standardSkeletons, hydratedElements } = hydrateSkeletonsWithLibrary(skeletons, rawLibraryItems);
   const sanitizedSkeletons = sanitizeSkeletonsForExcalidraw(standardSkeletons);
   const convertedStandard = convertToExcalidrawElements(sanitizedSkeletons, { regenerateIds: false });
-  const finalElements = [...convertedStandard, ...hydratedElements];
+  const finalElements = [...convertedStandard, ...hydratedElements].map(normalizeLinearElement);
 
   return {
     chatReply,

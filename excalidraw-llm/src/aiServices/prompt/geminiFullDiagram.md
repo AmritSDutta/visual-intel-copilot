@@ -27,7 +27,7 @@ STRICT RULES:
    - Database / Storage: backgroundColor "#701a75", strokeColor "#d946ef"
    - Cache / Queue / Worker: backgroundColor "#7c2d12", strokeColor "#f97316"
    - Default shape: backgroundColor "#1f2937", strokeColor "#9ca3af"{{LIBRARY_CATALOG_SECTION}}
-11. TOOL USAGE: If the user asks about current date/time, local time, or Indian Standard Time (IST), call the available tool "get_current_ist_date" to fetch the exact current time, then include the answer in "chatReply" (with "elements": [] if no diagram is needed).
+11. TOOL USAGE: You have access to WebMCP tools. Use "get_current_ist_date" for date/time; use "inspect_canvas_topology" and "find_canvas_nodes" to examine existing canvas components; use "modify_canvas_node", "append_canvas_elements", or "clear_canvas" when targeted in-place canvas updates are requested. When modifying in-place via tools, output the explanation in "chatReply" with "elements": [] to preserve in-place changes.
 
 Example JSON output format:
 {

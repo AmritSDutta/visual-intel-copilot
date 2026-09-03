@@ -9,6 +9,7 @@ import { exportSessionToPdf } from '../services/pdfExportService';
 import { useAuth } from '../context/AuthContext';
 import { saveCloudSessionTurn, getCloudSessionsSummary, getCloudSessionTurns, deleteCloudSession } from '../services/supabaseDbService';
 import { AppHeader } from './AppHeader';
+import { registerActiveCanvasBridge } from '../services/webMcpService';
 import {
   createSpeechRecognizer,
   speakNativeAudioResponse,
@@ -169,6 +170,37 @@ export function VoiceWorkspace({ onNavigate }: VoiceWorkspaceProps) {
         console.error('Failed to load default library:', err);
       });
   }, [excalidrawAPI]);
+
+  // Register active canvas bridge with WebMCP service
+  useEffect(() => {
+    if (!excalidrawAPI) return;
+    const api = excalidrawAPI as {
+      getSceneElements: () => any[];
+      updateScene: (opts: any) => void;
+    };
+
+    const unregister = registerActiveCanvasBridge({
+      getElements: () => api.getSceneElements() || [],
+      setElements: (elements: any[]) => {
+        api.updateScene({
+          elements,
+          commitToHistory: true,
+          scrollToContent: true
+        });
+      },
+      getSnapshotBase64: async () => {
+        return await getCanvasSnapshotBase64();
+      },
+      getChatMessages: () => {
+        return messages.map((m) => ({
+          role: m.sender,
+          content: m.text
+        }));
+      }
+    });
+
+    return () => unregister();
+  }, [excalidrawAPI, messages]);
 
   const getCanvasSnapshotBase64 = async (): Promise<string | null> => {
     if (!excalidrawAPI) return null;

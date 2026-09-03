@@ -32,6 +32,56 @@ export function buildLibraryCatalog(libraryItems: any[]): LibraryCatalogItem[] {
 }
 
 /**
+ * Normalizes linear element (arrow/line/freedraw) points so that points[0] is strictly [0, 0]
+ * and all offsets are correctly applied to the element's (x, y) coordinates.
+ * Strictly prevents Excalidraw's "Linear element is not normalized Error".
+ */
+export function normalizeLinearElement(element: any): any {
+  if (!element || (element.type !== 'arrow' && element.type !== 'line' && element.type !== 'freedraw')) {
+    return element;
+  }
+
+  const el = { ...element };
+  let points = Array.isArray(el.points) ? el.points : [];
+
+  // If points array is empty or malformed
+  if (!points.length || !Array.isArray(points[0])) {
+    const dx = typeof el.width === 'number' && el.width !== 0 ? el.width : 180;
+    const dy = typeof el.height === 'number' ? el.height : 0;
+    el.points = [[0, 0], [dx, dy]];
+    return el;
+  }
+
+  // If first point is not [0, 0], shift origin to points[0]
+  const firstX = typeof points[0][0] === 'number' ? points[0][0] : 0;
+  const firstY = typeof points[0][1] === 'number' ? points[0][1] : 0;
+
+  if (firstX !== 0 || firstY !== 0) {
+    el.x = (typeof el.x === 'number' ? el.x : 0) + firstX;
+    el.y = (typeof el.y === 'number' ? el.y : 0) + firstY;
+    points = points.map((p: any) => {
+      if (Array.isArray(p) && typeof p[0] === 'number' && typeof p[1] === 'number') {
+        return [p[0] - firstX, p[1] - firstY];
+      }
+      return [0, 0];
+    });
+  }
+
+  // Ensure there are at least 2 distinct points
+  if (points.length < 2) {
+    const dx = typeof el.width === 'number' && el.width !== 0 ? el.width : 180;
+    const dy = typeof el.height === 'number' ? el.height : 0;
+    points = [[0, 0], [dx, dy]];
+  }
+
+  // Guarantee points[0] is exactly [0, 0]
+  points[0] = [0, 0];
+  el.points = points;
+
+  return el;
+}
+
+/**
   * Sanitizes element skeletons to guarantee valid top-level text string properties for convertToExcalidrawElements.
   */
 export function sanitizeSkeletonsForExcalidraw(skeletons: any[]): any[] {
@@ -74,10 +124,10 @@ export function sanitizeSkeletonsForExcalidraw(skeletons: any[]): any[] {
       return el;
     });
 
-  // 2. Second pass: validate arrow bindings against existing element IDs
+  // 2. Second pass: validate arrow bindings against existing element IDs & normalize linear elements
   return sanitized.map(el => {
-    if (el.type === 'arrow' || el.type === 'line') {
-      const cleanEl = { ...el };
+    if (el.type === 'arrow' || el.type === 'line' || el.type === 'freedraw') {
+      let cleanEl = { ...el };
 
       // Check start element validity
       const startId = cleanEl.start?.id || cleanEl.startBinding?.elementId;
@@ -93,7 +143,7 @@ export function sanitizeSkeletonsForExcalidraw(skeletons: any[]): any[] {
         delete cleanEl.endBinding;
       }
 
-      return cleanEl;
+      return normalizeLinearElement(cleanEl);
     }
     return el;
   });
@@ -251,7 +301,7 @@ export function hydrateSkeletonsWithLibrary(skeletons: any[], rawLibraryItems: a
         arrowItem.points = [[0, 0], [dx, dy]];
       }
 
-      standardSkeletons.push(arrowItem);
+      standardSkeletons.push(normalizeLinearElement(arrowItem));
     }
   }
 

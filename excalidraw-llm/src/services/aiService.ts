@@ -1,6 +1,6 @@
 import { convertToExcalidrawElements } from '@excalidraw/excalidraw';
 import { GoogleGenAI, Type } from '@google/genai';
-import { hydrateSkeletonsWithLibrary, sanitizeSkeletonsForExcalidraw } from '../utils/libraryIndexer';
+import { hydrateSkeletonsWithLibrary, sanitizeSkeletonsForExcalidraw, normalizeLinearElement } from '../utils/libraryIndexer';
 import { repairAndParseJson } from '../utils/jsonRepair';
 import { webMcpTools } from './webMcpService';
 import { getSystemInstruction, stripMarkdown } from '../aiServices/prompts';
@@ -51,7 +51,7 @@ function processResponseJson(cleanJsonStr: string, rawLibraryItems: any[]): AIDi
   const { standardSkeletons, hydratedElements } = hydrateSkeletonsWithLibrary(skeletons, rawLibraryItems);
   const sanitizedSkeletons = sanitizeSkeletonsForExcalidraw(standardSkeletons);
   const convertedStandard = convertToExcalidrawElements(sanitizedSkeletons, { regenerateIds: false });
-  const finalElements = [...convertedStandard, ...hydratedElements];
+  const finalElements = [...convertedStandard, ...hydratedElements].map(normalizeLinearElement);
 
   return {
     chatReply,

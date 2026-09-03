@@ -18,6 +18,7 @@ import { useAuth } from '../context/AuthContext';
 import { saveCloudSessionTurn, getCloudSessionsSummary, getCloudSessionTurns, deleteCloudSession } from '../services/supabaseDbService';
 import { AppHeader } from './AppHeader';
 import { HistoryModal } from './HistoryModal';
+import { registerActiveCanvasBridge } from '../services/webMcpService';
 import {
   speakNativeAudioResponse,
   stopAudioResponse,
@@ -245,6 +246,35 @@ export function AgenticWorkspace({ onNavigate }: AgenticWorkspaceProps) {
       return null;
     }
   }, [excalidrawAPI, theme]);
+
+  // Register active canvas bridge with WebMCP service
+  useEffect(() => {
+    if (!excalidrawAPI) return;
+    const api = excalidrawAPI as any;
+
+    const unregister = registerActiveCanvasBridge({
+      getElements: () => api.getSceneElements() || [],
+      setElements: (elements: any[]) => {
+        api.updateScene({
+          elements,
+          commitToHistory: true,
+          scrollToContent: true
+        });
+      },
+      getSnapshotBase64: async () => {
+        return await getCanvasSnapshot();
+      },
+      getChatMessages: () => {
+        return messages.map((m) => ({
+          role: m.sender === 'user' ? 'user' : 'assistant',
+          content: m.text,
+          badge: m.subagentBadge
+        }));
+      }
+    });
+
+    return () => unregister();
+  }, [excalidrawAPI, messages, getCanvasSnapshot]);
 
   // Streams the live model's spoken transcript into a chat bubble (upsert) + saves the turn.
   const updateAgentTranscript = useCallback((text: string, isFinal: boolean) => {

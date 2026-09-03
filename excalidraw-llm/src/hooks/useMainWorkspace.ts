@@ -8,6 +8,7 @@ import { saveCloudSessionTurn } from '../services/supabaseDbService'
 import type { Message } from '../types/chat'
 import { useSettings } from './useSettings'
 import { useSessionHistory } from './useSessionHistory'
+import { registerActiveCanvasBridge } from '../services/webMcpService'
 
 type ExcalidrawAPI = {
   getSceneElements: () => readonly unknown[]
@@ -49,6 +50,33 @@ export function useMainWorkspace() {
   ])
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
+
+  // Register active canvas bridge with WebMCP service
+  useEffect(() => {
+    if (!excalidrawAPI) return
+
+    const unregister = registerActiveCanvasBridge({
+      getElements: () => (excalidrawAPI.getSceneElements() as any[]) || [],
+      setElements: (elements: any[]) => {
+        excalidrawAPI.updateScene({
+          elements,
+          commitToHistory: true,
+          scrollToContent: true
+        })
+      },
+      getSnapshotBase64: async () => {
+        return await getCanvasSnapshotBase64()
+      },
+      getChatMessages: () => {
+        return messages.map((m) => ({
+          role: m.sender === 'user' ? 'user' : 'assistant',
+          content: m.text
+        }))
+      }
+    })
+
+    return () => unregister()
+  }, [excalidrawAPI, messages])
 
   // Session history sub-hook
   const history = useSessionHistory(

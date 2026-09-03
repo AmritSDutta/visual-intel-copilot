@@ -1,5 +1,4 @@
 import type { AdkTool, AdkToolExecutionContext, AdkAgentMessage } from './types';
-import { createCanvasTools } from './canvasTools';
 import { generateTextExplanationWithGroq } from './providers';
 import { generateDiagramElementsWithMistral } from './providers';
 import { generateDiagramFromPrompt } from './providers';
@@ -16,8 +15,19 @@ export interface MultiAgentToolsConfig {
 }
 
 export function createMultiAgentTools(config: MultiAgentToolsConfig): AdkTool[] {
-  // 1. All Canvas Perception, Manipulation, and Chat Reading Tools
-  const canvasTools = createCanvasTools(config.getMessages);
+  // 1. Universal WebMCP Perception, Manipulation, and System Tools
+  const webMcpAdkTools: AdkTool[] = webMcpTools.map((t) => ({
+    name: t.name,
+    description: t.description,
+    parameters: {
+      type: 'object',
+      properties: t.inputSchema.properties || {},
+      required: (t.inputSchema.required as string[]) || []
+    },
+    execute: async (args: Record<string, any>) => {
+      return await t.execute(args);
+    }
+  }));
 
   // 2. Subagent Delegation Tools Owned by Live Agent
   const subagentTools: AdkTool[] = [
@@ -109,19 +119,5 @@ export function createMultiAgentTools(config: MultiAgentToolsConfig): AdkTool[] 
     }
   ];
 
-  // 3. WebMCP Tools (Read-only browser-level tools)
-  const webMcpAdkTools: AdkTool[] = webMcpTools.map((t) => ({
-    name: t.name,
-    description: t.description,
-    parameters: {
-      type: 'object',
-      properties: t.inputSchema.properties || {},
-      required: (t.inputSchema.required as string[]) || []
-    },
-    execute: async (args: Record<string, any>) => {
-      return await t.execute(args);
-    }
-  }));
-
-  return [...canvasTools, ...subagentTools, ...webMcpAdkTools];
+  return [...webMcpAdkTools, ...subagentTools];
 }

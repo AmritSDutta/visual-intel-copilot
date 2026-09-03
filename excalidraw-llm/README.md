@@ -206,6 +206,175 @@ excalidraw-llm/
 
 ---
 
+## 🛠️ WebMCP Tools & Real-World Examples
+
+All workspaces (**Canvas Chat `/`**, **Voice Mode `/voice`**, and **Live Audio Studio `/agentic`**) have direct access to a unified suite of **WebMCP (Web Model Context Protocol)** tools registered on `navigator.modelContext` and available to Gemini, Ollama, and Subagents.
+
+---
+
+### 1. 🕒 `get_current_ist_date` (System Date & Time)
+Returns the current date and time in Indian Standard Time (IST).
+
+* **Example 1 — Direct Chat Query:**
+  * **User Prompt:** *"What is the current time and date in IST right now?"*
+  * **Tool Execution:** `get_current_ist_date({})`
+  * **Result:** `{ "ist": "Thursday, September 3, 2026 at 2:45:00 PM GMT+5:30" }`
+* **Example 2 — Diagram Timestamping:**
+  * **User Prompt:** *"Generate a Kubernetes cluster diagram and append a text note with the current timestamp."*
+  * **Model Action:** Calls `get_current_ist_date()`, then places a formatted timestamp node onto the canvas.
+
+---
+
+### 2. 🗺️ `inspect_canvas_topology` (Canvas Perception & ASCII Graph)
+Extracts structured node coordinates, dimensions, connector bindings, and an ASCII dependency graph from the active canvas scene.
+
+* **Example 1 — Architectural Review:**
+  * **User Prompt:** *"Analyze the diagram on screen and explain what data flow paths exist."*
+  * **Tool Execution:** `inspect_canvas_topology({})`
+  * **Result:**
+    ```json
+    {
+      "status": "success",
+      "summary": "3 nodes, 2 connectors on canvas.",
+      "topologyGraph": "1. [Client SPA] --[1. POST /login]--> [API Gateway]\n2. [API Gateway] --[2. Query User]--> [PostgreSQL DB]"
+    }
+    ```
+* **Example 2 — Pre-modification Inspection:**
+  * **User Prompt:** *"Do we have single points of failure in this current architecture?"*
+  * **Model Action:** Inspects the topology graph to identify nodes with a single ingress/egress.
+
+---
+
+### 3. 🔍 `find_canvas_nodes` (Targeted Component Search)
+Searches for specific nodes, services, databases, or components across the canvas by keyword, name, or role.
+
+* **Example 1 — Component Lookup:**
+  * **User Prompt:** *"Where is the Redis cache located in this diagram?"*
+  * **Tool Execution:** `find_canvas_nodes({ "query": "redis" })`
+  * **Result:**
+    ```json
+    {
+      "query": "redis",
+      "matchCount": 1,
+      "nodes": [{ "id": "redis_node_1", "label": "Redis Cache", "x": 650, "y": 200, "type": "rectangle" }]
+    }
+    ```
+* **Example 2 — Role Search:**
+  * **User Prompt:** *"Find all databases on the canvas."*
+  * **Tool Execution:** `find_canvas_nodes({ "query": "database" })`
+
+---
+
+### 4. ✏️ `modify_canvas_node` (Targeted In-Place Modification)
+Updates a specific node's label text, border `strokeColor`, or fill `backgroundColor` **in-place without clearing or re-drawing other elements**.
+
+* **Example 1 — Rename Component:**
+  * **User Prompt:** *"Rename the 'API Gateway' box to 'Kong Gateway V2'."*
+  * **Tool Execution:**
+    ```json
+    modify_canvas_node({
+      "nodeId": "api_gateway",
+      "newLabel": "Kong Gateway V2"
+    })
+    ```
+  * **Outcome:** Only the targeted Gateway box is renamed; all connectors, database shapes, and coordinates remain intact.
+* **Example 2 — Highlight / Change Colors:**
+  * **User Prompt:** *"Make the Payment Service box green to indicate it's active."*
+  * **Tool Execution:**
+    ```json
+    modify_canvas_node({
+      "nodeId": "payment_service",
+      "backgroundColor": "#064e3b",
+      "strokeColor": "#10b981"
+    })
+    ```
+
+---
+
+### 5. ➕ `append_canvas_elements` (Incremental Vector Injection)
+Appends new shapes, library stencils, or connector arrows into the active scene **without removing or overwriting existing elements**.
+
+* **Example 1 — Add Cache & Connector Beside Existing Gateway:**
+  * **User Prompt:** *"Add a Redis cache box beside the API Gateway and connect them with an arrow."*
+  * **Tool Execution:**
+    ```json
+    append_canvas_elements({
+      "elements": [
+        {
+          "id": "redis_cache",
+          "type": "rectangle",
+          "x": 650,
+          "y": 200,
+          "width": 150,
+          "height": 70,
+          "label": { "text": "Redis Cache" },
+          "backgroundColor": "#7c2d12",
+          "strokeColor": "#f97316"
+        },
+        {
+          "type": "arrow",
+          "start": { "id": "api_gateway" },
+          "end": { "id": "redis_cache" },
+          "label": { "text": "Cache Lookup" },
+          "strokeColor": "#9ca3af"
+        }
+      ]
+    })
+    ```
+* **Example 2 — Add Ingress Layer:**
+  * **User Prompt:** *"Put a Cloudflare CDN in front of the Client."*
+  * **Model Action:** Injects the CDN node and updates the client arrow binding without redrawing the backend.
+
+---
+
+### 6. 🗑️ `clear_canvas` (Canvas Reset)
+Resets and clears all vector elements and text from the active scene.
+
+* **Example 1 — Start Fresh Request:**
+  * **User Prompt:** *"Wipe the canvas, let's draw an Event-Driven Kafka pipeline from scratch."*
+  * **Tool Execution:** `clear_canvas({})`
+  * **Outcome:** Canvas returns to blank state ready for a new architecture.
+* **Example 2 — Voice Mode Reset:**
+  * **User Voice Command:** *"Clear the screen."*
+  * **Model Action:** Executes `clear_canvas()` during live voice stream.
+
+---
+
+### 7. 📷 `get_canvas_visual_snapshot` (Multimodal Visual Capture)
+Captures a high-resolution base64 PNG screenshot of the canvas for multimodal image analysis.
+
+* **Example 1 — Layout Symmetry Inspection:**
+  * **User Prompt:** *"Look at the canvas. Are the arrows aligned cleanly without overlapping text?"*
+  * **Tool Execution:** `get_canvas_visual_snapshot({})`
+  * **Result:** Returns base64 image data payload for visual model inspection.
+* **Example 2 — Live Audio Studio Spatial Reasoning:**
+  * **Live Agent Action:** Automatically captures visual snapshot mid-conversation to verify spatial node distribution before answering user voice questions.
+
+---
+
+### 8. 💬 `read_chat_messages` (Chat & Notes Perception)
+Reads recent user specifications, notes, and previous architectural requirements from the active chat stream.
+
+* **Example 1 — Technical Constraints Summarization:**
+  * **User Prompt:** *"Summarize all the database requirements we discussed earlier."*
+  * **Tool Execution:** `read_chat_messages({ "limit": 10 })`
+  * **Result:**
+    ```json
+    {
+      "status": "success",
+      "totalMessages": 6,
+      "recentUserNotes": [
+        "We need high-throughput writes for telemetry data.",
+        "Must use PostgreSQL with read replicas."
+      ]
+    }
+    ```
+* **Example 2 — Live Studio Agent Hand-off:**
+  * **Live Agent Action:** Reads notes typed in the chat panel before generating or modifying the canvas.
+
+---
+
 ## 📜 License
 
 MIT License. Built for seamless AI-driven diagramming!
+
