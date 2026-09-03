@@ -1,3 +1,5 @@
+import { CANVAS_GEMINI_MODEL_OPTIONS, OLLAMA_MODEL_PRESETS } from '../config/aiModelsConfig'
+
 export interface SettingsModalProps {
   open: boolean
   onClose: () => void
@@ -35,10 +37,10 @@ export function SettingsModal({
 
   return (
     <div className="popup-overlay" onClick={onClose}>
-      <div className="popup-window" onClick={(e) => e.stopPropagation()}>
+      <div className="popup-card settings-popup-card" onClick={(e) => e.stopPropagation()}>
         <div className="popup-header">
-          <h3>⚙️ AI Provider Settings</h3>
-          <button className="popup-close-btn" onClick={onClose}>✕</button>
+          <h3>⚙️ Visual Intelligence Settings</h3>
+          <button className="popup-close-btn" onClick={onClose} aria-label="Close">✕</button>
         </div>
         
         <div className="popup-body">
@@ -49,8 +51,8 @@ export function SettingsModal({
               onClick={() => setProvider('ollama')}
             >
               <div className="provider-icon">🦙</div>
-              <div className="provider-title">Ollama Local</div>
-              <div className="provider-subtitle">Free & Private</div>
+              <div className="provider-title">Ollama</div>
+              <div className="provider-subtitle">Local & Cloud Proxies</div>
             </div>
             <div
               className={`provider-card ${provider === 'gemini' ? 'active' : ''}`}
@@ -110,7 +112,9 @@ export function SettingsModal({
                 className="model-select"
                 style={{ marginBottom: '8px' }}
               >
-                <option value="gemma4:31b-cloud">gemma4:31b-cloud (Gemma 4 31B Cloud)</option>
+                {OLLAMA_MODEL_PRESETS.map((opt) => (
+                  <option key={opt.id} value={opt.id}>{opt.label}</option>
+                ))}
               </select>
               <input
                 type="text"
@@ -141,10 +145,9 @@ export function SettingsModal({
                 onChange={(e) => setModelName(e.target.value)}
                 className="model-select"
               >
-                <option value="gemini-3.1-flash-lite">gemini-3.1-flash-lite (Fastest)</option>
-                <option value="gemini-3.5-flash-lite">gemini-3.5-flash-lite (Ultra-Fast 3.5)</option>
-                <option value="gemma-4-31b-it">gemma-4-31b-it (Gemma 4 31B Instruct)</option>
-                <option value="gemma-4-26b-it">gemma-4-26b-it (Gemma 4 26B Instruct)</option>
+                {CANVAS_GEMINI_MODEL_OPTIONS.map((opt) => (
+                  <option key={opt.id} value={opt.id}>{opt.label}</option>
+                ))}
               </select>
             </div>
           )}

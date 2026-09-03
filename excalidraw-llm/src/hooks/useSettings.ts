@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { setItemEncrypted, getItemEncrypted, removeItem } from '../utils/cryptoStorage'
+import { TASK_MODEL_REGISTRY } from '../config/aiModelsConfig'
 
 export type AIProvider = 'ollama' | 'gemini'
 
@@ -17,7 +18,7 @@ export function useSettings() {
   const [ollamaModel, setOllamaModel] = useState(() => 
     sessionStorage.getItem('OLLAMA_MODEL') || 
     localStorage.getItem('OLLAMA_MODEL') || 
-    'gemma4:31b-cloud'
+    TASK_MODEL_REGISTRY.OLLAMA_CHAT.primaryModel
   )
   const [ollamaApiKey, setOllamaApiKey] = useState(() => 
     sessionStorage.getItem('OLLAMA_API_KEY') || 
@@ -32,7 +33,7 @@ export function useSettings() {
   const [modelName, setModelName] = useState(() => 
     sessionStorage.getItem('GEMINI_MODEL') || 
     localStorage.getItem('GEMINI_MODEL') || 
-    'gemini-3.1-flash-lite'
+    TASK_MODEL_REGISTRY.CANVAS_MAIN_AGENT.primaryModel
   )
   const [showSettings, setShowSettings] = useState(false)
 

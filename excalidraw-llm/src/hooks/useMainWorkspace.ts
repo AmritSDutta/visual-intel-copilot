@@ -1,6 +1,10 @@
 import { useState, useEffect, useRef, type KeyboardEvent } from 'react'
 import { exportToCanvas, exportToBlob } from '@excalidraw/excalidraw'
-import { generateDiagramFromPrompt, generateDiagramWithOllama } from '../services/aiService'
+import {
+  generateDiagramFromPrompt,
+  generateDiagramWithOllama,
+  runCanvasOrchestratorAgent
+} from '../services/aiService'
 import { saveSessionTurn } from '../services/sessionDbService'
 import type { SessionTurnRecord } from '../services/sessionDbService'
 import { useAuth } from '../context/AuthContext'
@@ -320,10 +324,59 @@ export function useMainWorkspace() {
     setIsLoading(true)
 
     try {
-      await executeDiagram(query)
+      const agentResult = await runCanvasOrchestratorAgent({
+        query,
+        messages,
+        provider: settings.provider,
+        apiKey: settings.apiKey,
+        modelName: settings.modelName,
+        ollamaEndpoint: settings.ollamaEndpoint,
+        ollamaModel: settings.ollamaModel,
+        ollamaApiKey: settings.ollamaApiKey,
+        rawLibraryItems: rawLibraryItems as any[]
+      })
+
+      // If diagram generation was NOT triggered via generate_diagram_and_explanation,
+      // the agent answered conversationally or modified nodes in-place.
+      // Append the assistant reply and record the turn.
+      if (!agentResult.toolsCalled.includes('generate_diagram_and_explanation')) {
+        let snapshotDataUrl = ''
+        try {
+          const base64 = await getCanvasSnapshotBase64()
+          if (base64) {
+            snapshotDataUrl = `data:image/png;base64,${base64}`
+          }
+        } catch (snapshotErr) {
+          console.warn('Failed to capture snapshot for session turn:', snapshotErr)
+        }
+
+        const turnId = `turn_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`
+        const record: SessionTurnRecord = {
+          session_id: history.sessionId,
+          turn_id: turnId,
+          user_prompt: query,
+          chat_reply: agentResult.chatReply,
+          image_blob: snapshotDataUrl,
+          created_at: new Date().toISOString()
+        }
+
+        // Save local cache and cloud turn
+        await saveSessionTurn(record).catch((e) => console.warn('Failed to auto-save local turn cache:', e))
+        if (user) {
+          await saveCloudSessionTurn(user.id, record).catch((e) => console.error('Failed to save turn to Supabase cloud:', e))
+        }
+
+        const aiReply: Message = {
+          id: (Date.now() + 1).toString(),
+          sender: 'assistant',
+          text: agentResult.chatReply,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        }
+        setMessages((prev) => [...prev, aiReply])
+      }
     } catch (error: unknown) {
-      console.error('Diagram generation error:', error)
-      const errorMsgText = error instanceof Error ? error.message : 'Failed to generate diagram.'
+      console.error('Canvas Orchestrator error:', error)
+      const errorMsgText = error instanceof Error ? error.message : 'Failed to process request.'
       const errorMsg: Message = {
         id: (Date.now() + 1).toString(),
         sender: 'assistant',

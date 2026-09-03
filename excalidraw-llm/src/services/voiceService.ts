@@ -1,30 +1,19 @@
 import { GoogleGenAI, Modality, Type } from '@google/genai';
 import { StreamingAudioPlayer } from '../aiServices/audioUtils';
 import { webMcpTools } from './webMcpService';
+import {
+  VOICE_LIVE_MODEL_OPTIONS,
+  TASK_MODEL_REGISTRY
+} from '../config/aiModelsConfig';
 
-/**
- * ============================================================================
- * TRUTH: CANONICAL GEMINI MULTIMODAL LIVE API SUPPORTED MODEL IDS.
- * NEVER CHANGE OR MODIFY THESE IDS.
- * ============================================================================
- */
 export const SUPPORTED_MODEL_IDS = [
-  'gemini-2.5-flash-native-audio-preview-12-2025',
-  'gemini-3.1-flash-live-preview',
+  TASK_MODEL_REGISTRY.VOICE_LIVE_AGENT.primaryModel,
+  ...TASK_MODEL_REGISTRY.VOICE_LIVE_AGENT.fallbackModels
 ] as const;
 
 export type SupportedLiveModelId = (typeof SUPPORTED_MODEL_IDS)[number];
 
-export const GEMINI_LIVE_MODELS = [
-  {
-    id: SUPPORTED_MODEL_IDS[0],
-    label: `${SUPPORTED_MODEL_IDS[0]} (Native Audio ⭐)`,
-  },
-  {
-    id: SUPPORTED_MODEL_IDS[1],
-    label: `${SUPPORTED_MODEL_IDS[1]} (Live Preview)`,
-  },
-];
+export const GEMINI_LIVE_MODELS = VOICE_LIVE_MODEL_OPTIONS;
 
 export interface StudioVoiceOption {
   id: string;

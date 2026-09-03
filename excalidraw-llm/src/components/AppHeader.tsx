@@ -1,4 +1,5 @@
 import { UserMenu } from './UserMenu';
+import { TASK_MODEL_REGISTRY } from '../config/aiModelsConfig';
 
 export interface AppHeaderProps {
   currentPath: string;
@@ -40,8 +41,8 @@ export function AppHeader({
   onToggleTheme,
   isCanvasFrozen,
   onToggleCanvasLock,
-  ollamaModel = 'gemma4:31b-cloud',
-  modelName = 'gemini-2.5-flash-native-audio-latest'
+  ollamaModel = TASK_MODEL_REGISTRY.OLLAMA_CHAT.primaryModel,
+  modelName = TASK_MODEL_REGISTRY.CANVAS_MAIN_AGENT.primaryModel
 }: AppHeaderProps) {
   const isAudioActive = isListening || isSpeaking;
 

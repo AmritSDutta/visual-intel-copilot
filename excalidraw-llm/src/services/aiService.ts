@@ -5,13 +5,53 @@ import { repairAndParseJson } from '../utils/jsonRepair';
 import { webMcpTools } from './webMcpService';
 import { getSystemInstruction, stripMarkdown } from '../aiServices/prompts';
 import { extractJsonPayload } from '../aiServices/parse';
+import {
+  AI_TASKS,
+  TASK_MODEL_REGISTRY,
+  getCandidateModelsForTask
+} from '../config/aiModelsConfig';
 
 export interface AIDiagramResult {
   chatReply: string;
   elements: any[];
 }
 
+export interface CanvasAgentRunOptions {
+  query: string;
+  messages?: Array<{ role?: string; sender?: string; content?: string; text?: string }>;
+  provider: 'gemini' | 'ollama';
+  apiKey?: string;
+  modelName?: string;
+  ollamaEndpoint?: string;
+  ollamaModel?: string;
+  ollamaApiKey?: string;
+  rawLibraryItems?: any[];
+}
+
+export interface CanvasAgentResult {
+  chatReply: string;
+  toolsCalled: string[];
+}
+
 export { getSystemInstruction, stripMarkdown, extractJsonPayload };
+
+const CANVAS_ORCHESTRATOR_SYSTEM_PROMPT = `You are Inquisitive Visual Intel Co-pilot, an elite software architect and visual system design assistant.
+You collaborate with the user on the Excalidraw canvas whiteboard in real-time.
+
+You have access to 9 powerful WebMCP tools:
+1. 'generate_diagram_and_explanation': Call this when the user asks to draw, design, generate, or architect a system diagram or visual layout. Provide their prompt/spec as the argument.
+2. 'modify_canvas_node': Call this for targeted in-place modifications (renaming a node, changing fill/border colors like yellow/blue/green/red, repositioning) without clearing the canvas.
+3. 'append_canvas_elements': Call this to add new shapes, queues, or connector arrows into the active canvas without removing existing elements.
+4. 'inspect_canvas_topology': Call this to inspect existing nodes, IDs, connectors, and ASCII flow graph on the whiteboard.
+5. 'find_canvas_nodes': Call this to search for specific components or roles (e.g., "cache", "database", "gateway").
+6. 'get_canvas_visual_snapshot': Call this to capture a base64 PNG visual snapshot of the canvas for spatial analysis.
+7. 'read_chat_messages': Call this to review recent conversation notes.
+8. 'get_current_ist_date': Call this for real-time timestamp or date queries.
+9. 'clear_canvas': Call this if the user explicitly asks to wipe/reset the canvas whiteboard.
+
+Guidelines:
+- When the user asks conceptual, architectural, or technical questions (e.g. comparing technologies, explaining algorithms, evaluating trade-offs), answer directly in clear, rich Markdown with helpful headings, bullet points, and code/table formatting. DO NOT call 'generate_diagram_and_explanation' unless the user explicitly wants to draw/generate a diagram or visual architecture.
+- When tool actions are executed, provide a concise, engaging summary of the action taken and explain key architectural highlights.`;
 
 function processResponseJson(cleanJsonStr: string, rawLibraryItems: any[]): AIDiagramResult {
   if (!cleanJsonStr || !cleanJsonStr.trim()) {
@@ -59,18 +99,14 @@ function processResponseJson(cleanJsonStr: string, rawLibraryItems: any[]): AIDi
   };
 }
 
-function normalizeGeminiModel(modelName: string): string {
-  const trimmed = (modelName || '').trim();
-  if (!trimmed || trimmed.includes('native-audio')) {
-    return 'gemini-2.5-flash';
-  }
-  return trimmed;
-}
-
+/**
+ * Dedicated Subagent Diagram Generation Engine.
+ * Produces structured Excalidraw JSON payloads and hydrates library stencils.
+ */
 export async function generateDiagramFromPrompt(
   prompt: string,
   apiKey: string,
-  modelName: string = 'gemini-2.5-flash',
+  modelName?: string,
   rawLibraryItems: any[] = []
 ): Promise<AIDiagramResult> {
   if (!apiKey) {
@@ -78,110 +114,337 @@ export async function generateDiagramFromPrompt(
   }
 
   const systemInstruction = getSystemInstruction(rawLibraryItems);
-  const primaryModel = normalizeGeminiModel(modelName);
-
-  const candidateModels = Array.from(new Set([
-    primaryModel,
-    'gemini-3.1-flash-lite',
-  ]));
-
-  const functionDeclarations = webMcpTools.map((t) => ({
-    name: t.name,
-    description: t.description,
-    parameters: {
-      type: Type.OBJECT,
-      properties: t.inputSchema.properties || {},
-      required: (t.inputSchema.required as string[]) || []
-    }
-  }));
+  const candidateModels = getCandidateModelsForTask(AI_TASKS.CANVAS_DIAGRAM_ENGINE, modelName);
 
   let lastError: Error | null = null;
   const ai = new GoogleGenAI({ apiKey });
 
   for (const targetModel of candidateModels) {
     try {
-      console.log(`[Gemini AI] Requesting diagram generation from model: ${targetModel}`);
+      console.log(`[Gemini Subagent] Synthesizing diagram vector payload on model: ${targetModel}`);
       const contents: any[] = [{ role: 'user', parts: [{ text: prompt }] }];
 
-      let response = await ai.models.generateContent({
+      const response = await ai.models.generateContent({
         model: targetModel,
         contents,
         config: {
           systemInstruction,
-          temperature: 0.2,
-          maxOutputTokens: 8192,
-          tools: (functionDeclarations.length > 0 ? [{ functionDeclarations }] : undefined) as any
+          temperature: TASK_MODEL_REGISTRY.CANVAS_DIAGRAM_ENGINE.temperature,
+          maxOutputTokens: TASK_MODEL_REGISTRY.CANVAS_DIAGRAM_ENGINE.maxOutputTokens
         }
       });
 
-      // Handle function calls triggered by Gemini (support multi-turn tool loops)
-      let toolTurns = 0;
-      while (response.functionCalls && response.functionCalls.length > 0 && toolTurns < 5) {
-        toolTurns++;
-        console.log(`[Gemini AI] Model triggered function calls (turn ${toolTurns}):`, response.functionCalls);
+      const rawText = response.text || '';
+      return processResponseJson(rawText, rawLibraryItems);
+    } catch (e: any) {
+      console.warn(`[Gemini Subagent] Model ${targetModel} failed:`, e);
+      lastError = e;
+    }
+  }
 
-        // 1. Preserve the exact model content from Gemini containing the thought signature and functionCall parts
-        const modelContent = response.candidates?.[0]?.content || {
-          role: 'model',
-          parts: response.functionCalls.map((c) => ({ functionCall: { name: c.name, args: c.args || {} } }))
-        };
-        contents.push(modelContent);
+  throw lastError || new Error('Failed to generate diagram from Gemini.');
+}
 
-        // 2. Execute all function calls and collect functionResponse parts in one user turn
-        const functionResponseParts: any[] = [];
-        for (const call of response.functionCalls) {
-          const tool = webMcpTools.find((t) => t.name === call.name);
-          let toolResult: any = { error: `Tool "${call.name}" not found` };
-          if (tool) {
-            try {
-              toolResult = await tool.execute(call.args || {});
-            } catch (toolErr: any) {
-              toolResult = { error: String(toolErr?.message || toolErr) };
-            }
+/**
+ * Primary Canvas Orchestrator Agent.
+ * Runs multi-turn tool calling across all 9 WebMCP tools and delegates diagram synthesis
+ * to the 'generate_diagram_and_explanation' subagent tool.
+ */
+export async function runCanvasOrchestratorAgent(
+  options: CanvasAgentRunOptions
+): Promise<CanvasAgentResult> {
+  const {
+    query,
+    messages = [],
+    provider,
+    apiKey,
+    modelName,
+    ollamaEndpoint = 'https://ollama.com',
+    ollamaModel = 'gemma4:31b-cloud',
+    ollamaApiKey = '',
+    rawLibraryItems: _rawLibraryItems = []
+  } = options;
+
+  const toolsCalled: string[] = [];
+
+  // ==========================================
+  // Track 1: GEMINI CLOUD ORCHESTRATOR
+  // ==========================================
+  if (provider === 'gemini') {
+    if (!apiKey) {
+      throw new Error('Gemini API key is required. Please set your API key in Settings (⚙️).');
+    }
+
+    const candidateModels = getCandidateModelsForTask(AI_TASKS.CANVAS_MAIN_AGENT, modelName);
+    const ai = new GoogleGenAI({ apiKey });
+
+    const functionDeclarations = webMcpTools.map((t) => ({
+      name: t.name,
+      description: t.description,
+      parameters: {
+        type: Type.OBJECT,
+        properties: (t.inputSchema.properties || {}) as any,
+        required: (t.inputSchema.required as string[]) || []
+      }
+    }));
+
+    let lastError: Error | null = null;
+
+    for (const targetModel of candidateModels) {
+      try {
+        console.log(`[Canvas Agent] Orchestrating query via Gemini model: ${targetModel}`);
+
+        // Build conversational turn history
+        const contents: any[] = [];
+        const recentHistory = messages.slice(-8);
+
+        for (const msg of recentHistory) {
+          const role = (msg.sender === 'assistant' || msg.role === 'assistant' || msg.role === 'model') ? 'model' : 'user';
+          const text = msg.text || msg.content || '';
+          if (text.trim()) {
+            contents.push({ role, parts: [{ text }] });
           }
-          functionResponseParts.push({
-            functionResponse: {
-              name: call.name,
-              response: toolResult
+        }
+
+        // Add current user turn
+        contents.push({ role: 'user', parts: [{ text: query }] });
+
+        let response = await ai.models.generateContent({
+          model: targetModel,
+          contents,
+          config: {
+            systemInstruction: CANVAS_ORCHESTRATOR_SYSTEM_PROMPT,
+            temperature: TASK_MODEL_REGISTRY.CANVAS_MAIN_AGENT.temperature,
+            maxOutputTokens: TASK_MODEL_REGISTRY.CANVAS_MAIN_AGENT.maxOutputTokens,
+            tools: functionDeclarations.length > 0 ? [{ functionDeclarations }] : undefined
+          }
+        });
+
+        // Multi-turn tool calling loop
+        let turns = 0;
+        while (response.functionCalls && response.functionCalls.length > 0 && turns < 5) {
+          turns++;
+          console.log(`[Canvas Agent] Tool calls triggered (turn ${turns}):`, response.functionCalls);
+
+          const modelContent = response.candidates?.[0]?.content || {
+            role: 'model',
+            parts: response.functionCalls.map((c) => ({ functionCall: { name: c.name, args: c.args || {} } }))
+          };
+          contents.push(modelContent);
+
+          const functionResponseParts: any[] = [];
+          for (const call of response.functionCalls) {
+            const callName = call.name || '';
+            if (callName) {
+              toolsCalled.push(callName);
+            }
+            const tool = webMcpTools.find((t) => t.name === callName);
+            let toolResult: any = { error: `Tool "${callName}" not found` };
+            if (tool) {
+              try {
+                toolResult = await tool.execute(call.args || {});
+              } catch (toolErr: any) {
+                toolResult = { error: String(toolErr?.message || toolErr) };
+              }
+            }
+            functionResponseParts.push({
+              functionResponse: {
+                name: callName,
+                response: toolResult
+              }
+            });
+          }
+
+          contents.push({
+            role: 'user',
+            parts: functionResponseParts
+          });
+
+          response = await ai.models.generateContent({
+            model: targetModel,
+            contents,
+            config: {
+              systemInstruction: CANVAS_ORCHESTRATOR_SYSTEM_PROMPT,
+              temperature: TASK_MODEL_REGISTRY.CANVAS_MAIN_AGENT.temperature,
+              maxOutputTokens: TASK_MODEL_REGISTRY.CANVAS_MAIN_AGENT.maxOutputTokens,
+              tools: functionDeclarations.length > 0 ? [{ functionDeclarations }] : undefined
             }
           });
         }
 
-        contents.push({
-          role: 'user',
-          parts: functionResponseParts
+        const replyText = response.text || '';
+        const finalReply = replyText.trim()
+          ? replyText.trim()
+          : toolsCalled.length > 0
+          ? `Executed action (${toolsCalled.join(', ')}) on canvas successfully.`
+          : 'Processed your request.';
+
+        return {
+          chatReply: finalReply,
+          toolsCalled
+        };
+      } catch (err: any) {
+        console.warn(`[Canvas Agent] Model ${targetModel} failed:`, err);
+        lastError = err;
+      }
+    }
+
+    throw lastError || new Error('Failed to complete request with Gemini Orchestrator.');
+  }
+
+  // ==========================================
+  // Track 2: OLLAMA CLOUD & LOCAL ORCHESTRATOR
+  // ==========================================
+  const cleanEndpoint = (ollamaEndpoint || 'https://ollama.com').replace(/\/+$/, '');
+  const cleanModel = (ollamaModel || 'gemma4:31b-cloud').trim();
+  const isRemote = cleanEndpoint.startsWith('https://') || (!cleanEndpoint.includes('localhost') && !cleanEndpoint.includes('127.0.0.1'));
+  const url = `${cleanEndpoint}/api/chat`;
+
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (ollamaApiKey?.trim()) {
+    headers['Authorization'] = `Bearer ${ollamaApiKey.trim()}`;
+  }
+
+  const ollamaTools = webMcpTools.map((t) => ({
+    type: 'function',
+    function: {
+      name: t.name,
+      description: t.description,
+      parameters: {
+        type: 'object',
+        properties: t.inputSchema.properties || {},
+        required: (t.inputSchema.required as string[]) || []
+      }
+    }
+  }));
+
+  const historyMessages: any[] = [
+    { role: 'system', content: CANVAS_ORCHESTRATOR_SYSTEM_PROMPT }
+  ];
+
+  for (const msg of messages.slice(-8)) {
+    const role = (msg.sender === 'assistant' || msg.role === 'assistant') ? 'assistant' : 'user';
+    const content = msg.text || msg.content || '';
+    if (content.trim()) {
+      historyMessages.push({ role, content });
+    }
+  }
+  historyMessages.push({ role: 'user', content: query });
+
+  const initialBody = {
+    model: cleanModel,
+    messages: historyMessages,
+    stream: false,
+    tools: ollamaTools.length > 0 ? ollamaTools : undefined
+  };
+
+  let response: Response;
+  try {
+    if (isRemote) {
+      response = await fetch('/api/proxy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetUrl: url, headers, body: initialBody })
+      });
+    } else {
+      response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(initialBody)
+      });
+    }
+  } catch {
+    response = await fetch('/api/proxy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ targetUrl: url, headers, body: initialBody })
+    });
+  }
+
+  if (!response.ok) {
+    const errText = await response.text().catch(() => '');
+    throw new Error(`Ollama Error (${response.status}): ${errText || response.statusText}`);
+  }
+
+  let currentData = await response.json();
+  let turns = 0;
+
+  while (
+    currentData?.message?.tool_calls &&
+    Array.isArray(currentData.message.tool_calls) &&
+    currentData.message.tool_calls.length > 0 &&
+    turns < 5
+  ) {
+    turns++;
+    historyMessages.push(currentData.message);
+
+    for (const call of currentData.message.tool_calls) {
+      const fnName = call?.function?.name || '';
+      const fnArgs = typeof call?.function?.arguments === 'string'
+        ? JSON.parse(call.function.arguments)
+        : (call?.function?.arguments || {});
+
+      if (fnName) {
+        toolsCalled.push(fnName);
+      }
+      const tool = webMcpTools.find((t) => t.name === fnName);
+      let toolResult: any = { error: `Tool "${fnName}" not found` };
+      if (tool) {
+        try {
+          toolResult = await tool.execute(fnArgs);
+        } catch (toolErr: any) {
+          toolResult = { error: String(toolErr?.message || toolErr) };
+        }
+      }
+
+      historyMessages.push({
+        role: 'tool',
+        content: JSON.stringify(toolResult)
+      });
+    }
+
+    const followUpBody = {
+      model: cleanModel,
+      messages: historyMessages,
+      stream: false,
+      tools: ollamaTools.length > 0 ? ollamaTools : undefined
+    };
+
+    let followUpRes: Response;
+    try {
+      if (isRemote) {
+        followUpRes = await fetch('/api/proxy', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ targetUrl: url, headers, body: followUpBody })
         });
-
-        // 3. Request next turn from Gemini
-        response = await ai.models.generateContent({
-          model: targetModel,
-          contents,
-          config: {
-            systemInstruction,
-            temperature: 0.2,
-            maxOutputTokens: 8192,
-            tools: (functionDeclarations.length > 0 ? [{ functionDeclarations }] : undefined) as any
-          }
+      } else {
+        followUpRes = await fetch(url, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(followUpBody)
         });
       }
+    } catch {
+      followUpRes = await fetch('/api/proxy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetUrl: url, headers, body: followUpBody })
+      });
+    }
 
-      const rawText = typeof response?.text === 'string' ? response.text : '';
-      let cleanJsonStr = rawText.trim();
-      if (!cleanJsonStr) {
-        continue;
-      }
-      if (cleanJsonStr.startsWith('```')) {
-        cleanJsonStr = cleanJsonStr.replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim();
-      }
-
-      return processResponseJson(cleanJsonStr, rawLibraryItems);
-    } catch (err: any) {
-      console.warn(`[Gemini AI] Model ${targetModel} failed, trying next candidate:`, err?.message);
-      lastError = err;
+    if (followUpRes && followUpRes.ok) {
+      currentData = await followUpRes.json();
+    } else {
+      break;
     }
   }
 
-  throw new Error(`Gemini API Error: ${lastError?.message || 'Failed to generate diagram.'}`);
+  const rawText = currentData?.message?.content || currentData?.response || '';
+  return {
+    chatReply: rawText.trim() || `Executed action (${toolsCalled.join(', ')}) on canvas.`,
+    toolsCalled
+  };
 }
 
 export async function generateDiagramWithOllama(
