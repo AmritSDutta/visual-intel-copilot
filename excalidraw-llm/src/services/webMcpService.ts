@@ -793,21 +793,27 @@ export async function ensureWebMcpInitialized(): Promise<boolean> {
 // Automatically invoke on module load if in a browser environment.
 // Exposes testing helpers and guarantees document.modelContext is ready for Chrome inspection.
 if (typeof window !== 'undefined') {
-  // Provide a compliant document.modelContext if no external host extension has injected one yet
-  if (typeof document !== 'undefined' && !(document as any).modelContext) {
+  if (typeof document !== 'undefined' && !(document as any).modelContext?.registerTool) {
     const toolsList: WebMcpTool[] = [];
+    const existing = (document as any).modelContext;
+    if (existing && Array.isArray(existing.tools)) toolsList.push(...existing.tools);
     (document as any).modelContext = {
       tools: toolsList,
       registerTool(tool: WebMcpTool) {
-        if (!toolsList.some((t) => t.name === tool.name)) {
-          toolsList.push(tool);
-        }
+        if (!toolsList.some((t) => t.name === tool.name)) toolsList.push(tool);
       },
       listTools() {
         return toolsList;
+      },
+      getTools() {
+        return toolsList;
       }
     };
+  } else if (typeof document !== 'undefined' && (document as any).modelContext && !(document as any).modelContext.getTools) {
+    (document as any).modelContext.getTools = (document as any).modelContext.listTools;
   }
+  if (typeof window !== 'undefined' && !(window as any).modelContext?.registerTool) (window as any).modelContext = (document as any).modelContext;
+  if (typeof navigator !== 'undefined' && !(navigator as any).modelContext?.registerTool) (navigator as any).modelContext = (document as any).modelContext;
 
   (window as any).__initWebMcp = initWebMcp;
   (window as any).__webMcpTools = webMcpTools;
