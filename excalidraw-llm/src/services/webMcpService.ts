@@ -24,6 +24,14 @@ declare global {
     listTools?: () => Promise<WebMcpTool[]> | WebMcpTool[];
   }
 
+  interface Document {
+    modelContext?: ModelContext;
+  }
+
+  interface Window {
+    modelContext?: ModelContext;
+  }
+
   interface Navigator {
     modelContext?: ModelContext;
   }
@@ -483,25 +491,42 @@ export const webMcpTools: readonly WebMcpTool[] = [
 // Internal set of registered tool names to ensure idempotent registration across tabs/renders
 const registeredToolNames = new Set<string>();
 
-/**
- * Check if the browser currently supports navigator.modelContext (WebMCP).
- */
-export function isWebMcpSupported(): boolean {
-  return typeof navigator !== 'undefined' && 'modelContext' in navigator && !!navigator.modelContext?.registerTool;
+function getModelContextTargets(): ModelContext[] {
+  const targets: ModelContext[] = [];
+  if (typeof navigator !== 'undefined' && (navigator as any).modelContext?.registerTool) {
+    targets.push((navigator as any).modelContext);
+  }
+  if (typeof document !== 'undefined' && (document as any).modelContext?.registerTool) {
+    targets.push((document as any).modelContext);
+  }
+  if (typeof window !== 'undefined' && (window as any).modelContext?.registerTool) {
+    targets.push((window as any).modelContext);
+  }
+  return targets;
 }
 
 /**
- * Registers a single tool with navigator.modelContext if available.
+ * Check if the browser currently supports WebMCP on any target.
+ */
+export function isWebMcpSupported(): boolean {
+  return getModelContextTargets().length > 0;
+}
+
+/**
+ * Registers a single tool with all available modelContext targets.
  */
 export async function registerWebMcpTool(tool: WebMcpTool): Promise<boolean> {
-  if (!isWebMcpSupported() || !navigator.modelContext) {
+  const targets = getModelContextTargets();
+  if (targets.length === 0) {
     return false;
   }
 
   try {
-    await navigator.modelContext.registerTool(tool);
+    for (const target of targets) {
+      await target.registerTool(tool);
+    }
     registeredToolNames.add(tool.name);
-    logToStdio('WEBMCP', `Registered WebMCP tool: "${tool.name}" on navigator.modelContext`);
+    logToStdio('WEBMCP', `Registered WebMCP tool: "${tool.name}" on modelContext (${targets.length} target(s))`);
     return true;
   } catch (error) {
     logToStdio('WEBMCP', `Failed to register tool "${tool.name}": ${String(error)}`);
@@ -514,21 +539,24 @@ export async function registerWebMcpTool(tool: WebMcpTool): Promise<boolean> {
  * Safe to call multiple times across tabs and route changes.
  */
 export async function initWebMcp(): Promise<boolean> {
-  if (!isWebMcpSupported() || !navigator.modelContext) {
+  const targets = getModelContextTargets();
+  if (targets.length === 0) {
     return false;
   }
 
   try {
     for (const tool of webMcpTools) {
       if (!registeredToolNames.has(tool.name)) {
-        await navigator.modelContext.registerTool(tool);
+        for (const target of targets) {
+          await target.registerTool(tool);
+        }
         registeredToolNames.add(tool.name);
         logToStdio('WEBMCP', `Initialized and registered WebMCP tool: "${tool.name}"`);
       }
     }
     return true;
   } catch (error) {
-    logToStdio('WEBMCP', `Error initializing tools on navigator.modelContext: ${String(error)}`);
+    logToStdio('WEBMCP', `Error initializing tools on modelContext: ${String(error)}`);
     return false;
   }
 }
