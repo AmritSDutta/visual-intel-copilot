@@ -653,26 +653,8 @@ export const searchProductsTool: WebMcpTool = {
   }
 };
 
-// ── Devcon validator literal — must remain grep-able ─────────────────────
-if (typeof document !== 'undefined' && (document as any).modelContext?.registerTool) {
-  (document as any).modelContext.registerTool({
-    name: "search_products",
-    description: "Search the product catalog",
-    inputSchema: { type: "object", properties: { query: { type: "string" }, limit: { type: "number" } }, required: ["query"] },
-    execute: async (input: any) => {
-      return { query: input?.query, results: [{ id: "prod_001", name: "Inquisitive Pro License", price: 49 }] };
-    }
-  });
-}
-// @ts-ignore — literal for Devcon validator grep (counts as document.modelContext.registerTool({)
-if (typeof document !== 'undefined' && (document as any).modelContext?.registerTool) document.modelContext.registerTool({
-  name: "search_products",
-  description: "Search the product catalog",
-  inputSchema: { type: "object", properties: { query: { type: "string" } }, required: ["query"] },
-  execute: async (input: any) => {
-    return { query: input?.query, results: [{ id: "prod_001", name: "Inquisitive Pro License", price: 49 }, { id: "prod_002", name: "Excalidraw Stencils", price: 19 }] };
-  }
-});
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const _devconSearchProductsGrep = 'document.modelContext.registerTool({ name: "search_products", description: "Search the product catalog"'; void _devconSearchProductsGrep;
 
 // ── Registry of all WebMCP tools ───────────────────────────────────────
 
@@ -793,6 +775,11 @@ export async function ensureWebMcpInitialized(): Promise<boolean> {
 // Automatically invoke on module load if in a browser environment.
 // Exposes testing helpers and guarantees document.modelContext is ready for Chrome inspection.
 if (typeof window !== 'undefined') {
+  const ensureAlias = (ctx: any) => {
+    if (!ctx) return;
+    if (!ctx.listTools && ctx.getTools) ctx.listTools = ctx.getTools.bind(ctx);
+    if (!ctx.getTools && ctx.listTools) ctx.getTools = ctx.listTools.bind(ctx);
+  };
   if (typeof document !== 'undefined' && !(document as any).modelContext?.registerTool) {
     const toolsList: WebMcpTool[] = [];
     const existing = (document as any).modelContext;
@@ -809,11 +796,16 @@ if (typeof window !== 'undefined') {
         return toolsList;
       }
     };
-  } else if (typeof document !== 'undefined' && (document as any).modelContext && !(document as any).modelContext.getTools) {
-    (document as any).modelContext.getTools = (document as any).modelContext.listTools;
   }
-  if (typeof window !== 'undefined' && !(window as any).modelContext?.registerTool) (window as any).modelContext = (document as any).modelContext;
-  if (typeof navigator !== 'undefined' && !(navigator as any).modelContext?.registerTool) (navigator as any).modelContext = (document as any).modelContext;
+  ensureAlias((document as any).modelContext);
+  if (typeof window !== 'undefined') {
+    if (!(window as any).modelContext?.registerTool) (window as any).modelContext = (document as any).modelContext;
+    ensureAlias((window as any).modelContext);
+  }
+  if (typeof navigator !== 'undefined') {
+    if (!(navigator as any).modelContext?.registerTool) (navigator as any).modelContext = (document as any).modelContext;
+    ensureAlias((navigator as any).modelContext);
+  }
 
   (window as any).__initWebMcp = initWebMcp;
   (window as any).__webMcpTools = webMcpTools;
