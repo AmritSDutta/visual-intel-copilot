@@ -12,6 +12,10 @@ export const isSupabaseConfigured = (): boolean => {
   );
 };
 
+export const isSupabasePersistenceEnabled = (): boolean => {
+  return import.meta.env.VITE_ENABLE_SUPABASE_PERSISTENCE === 'true';
+};
+
 // Create client instance (uses fallback to prevent runtime crash on initialization)
 export const supabase = createClient(
   supabaseUrl || 'https://placeholder.supabase.co',

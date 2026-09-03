@@ -1,7 +1,14 @@
-import { supabase } from './supabaseClient';
+import { supabase, isSupabasePersistenceEnabled } from './supabaseClient';
 import type { SessionTurnRecord, SessionSummary } from './sessionDbService';
+import { nativeConsole, logDirectToStdio } from '../utils/stdioLogger';
 
 export async function saveCloudSessionTurn(userId: string, record: SessionTurnRecord): Promise<void> {
+  if (!isSupabasePersistenceEnabled()) {
+    nativeConsole.log(`[SUPABASE_DB] ⏸️ Cloud persistence disabled. Skipping cloud save for session=${record.session_id}`);
+    logDirectToStdio('INFO', 'SUPABASE_DB', `⏸️ Cloud persistence disabled (VITE_ENABLE_SUPABASE_PERSISTENCE=false). Skipping cloud save for session=${record.session_id}`);
+    return;
+  }
+
   // 1. Ensure user session parent record exists / updated
   const { error: sessionErr } = await supabase
     .from('user_sessions')
@@ -16,7 +23,7 @@ export async function saveCloudSessionTurn(userId: string, record: SessionTurnRe
     );
 
   if (sessionErr) {
-    console.error('Failed to save cloud user session:', sessionErr);
+    console.error(`[SUPABASE_DB] ❌ Failed to save cloud user session (${record.session_id}):`, sessionErr);
     throw sessionErr;
   }
 
@@ -37,12 +44,20 @@ export async function saveCloudSessionTurn(userId: string, record: SessionTurnRe
     );
 
   if (turnErr) {
-    console.error('Failed to save cloud turn:', turnErr);
+    console.error(`[SUPABASE_DB] ❌ Failed to save cloud turn (${record.turn_id}):`, turnErr);
     throw turnErr;
   }
+
+  console.log(`[SUPABASE_DB] ☁️ Saved turn to cloud: session=${record.session_id}, turn=${record.turn_id}`);
 }
 
 export async function getCloudSessionsSummary(userId: string): Promise<SessionSummary[]> {
+  if (!isSupabasePersistenceEnabled()) {
+    nativeConsole.log('[SUPABASE_DB] ⏸️ Cloud persistence disabled. Skipping cloud sessions fetch.');
+    logDirectToStdio('INFO', 'SUPABASE_DB', '⏸️ Cloud persistence disabled (VITE_ENABLE_SUPABASE_PERSISTENCE=false). Skipping cloud sessions fetch.');
+    return [];
+  }
+
   const { data: turns, error } = await supabase
     .from('session_turns')
     .select('session_id, user_prompt, created_at')
@@ -50,11 +65,14 @@ export async function getCloudSessionsSummary(userId: string): Promise<SessionSu
     .order('created_at', { ascending: true });
 
   if (error) {
-    console.error('Failed to fetch cloud sessions summary:', error);
+    console.error('[SUPABASE_DB] ❌ Failed to fetch cloud sessions summary:', error);
     throw error;
   }
 
-  if (!turns || turns.length === 0) return [];
+  if (!turns || turns.length === 0) {
+    console.log('[SUPABASE_DB] ☁️ No cloud session records found');
+    return [];
+  }
 
   const sessionMap: { [sessionId: string]: { first_prompt: string; count: number; created_at: string; latest_created_at: string } } = {};
 
@@ -81,10 +99,17 @@ export async function getCloudSessionsSummary(userId: string): Promise<SessionSu
   }));
 
   summaries.sort((a, b) => b.latest_created_at.localeCompare(a.latest_created_at));
+  console.log(`[SUPABASE_DB] ☁️ Loaded ${summaries.length} session summaries from Supabase`);
   return summaries;
 }
 
 export async function getCloudSessionTurns(userId: string, sessionId: string): Promise<SessionTurnRecord[]> {
+  if (!isSupabasePersistenceEnabled()) {
+    nativeConsole.log(`[SUPABASE_DB] ⏸️ Cloud persistence disabled. Skipping cloud fetch for session=${sessionId}`);
+    logDirectToStdio('INFO', 'SUPABASE_DB', `⏸️ Cloud persistence disabled (VITE_ENABLE_SUPABASE_PERSISTENCE=false). Skipping cloud fetch for session=${sessionId}`);
+    return [];
+  }
+
   const { data, error } = await supabase
     .from('session_turns')
     .select('session_id, turn_id, user_prompt, chat_reply, image_blob, created_at')
@@ -93,11 +118,11 @@ export async function getCloudSessionTurns(userId: string, sessionId: string): P
     .order('created_at', { ascending: true });
 
   if (error) {
-    console.error('Failed to fetch cloud session turns:', error);
+    console.error(`[SUPABASE_DB] ❌ Failed to fetch cloud turns for session=${sessionId}:`, error);
     throw error;
   }
 
-  return (data || []).map((t) => ({
+  const turns = (data || []).map((t) => ({
     session_id: t.session_id,
     turn_id: t.turn_id,
     user_prompt: t.user_prompt,
@@ -105,9 +130,16 @@ export async function getCloudSessionTurns(userId: string, sessionId: string): P
     image_blob: t.image_blob || '',
     created_at: t.created_at
   }));
+
+  console.log(`[SUPABASE_DB] ☁️ Retrieved ${turns.length} turns from Supabase for session=${sessionId}`);
+  return turns;
 }
 
 export async function deleteCloudSession(userId: string, sessionId: string): Promise<void> {
+  if (!isSupabasePersistenceEnabled()) {
+    return;
+  }
+
   const { error } = await supabase
     .from('user_sessions')
     .delete()
@@ -115,7 +147,9 @@ export async function deleteCloudSession(userId: string, sessionId: string): Pro
     .eq('session_id', sessionId);
 
   if (error) {
-    console.error('Failed to delete cloud session:', error);
+    console.error(`[SUPABASE_DB] ❌ Failed to delete cloud session (${sessionId}):`, error);
     throw error;
   }
+
+  console.log(`[SUPABASE_DB] 🗑️ Deleted cloud session=${sessionId}`);
 }

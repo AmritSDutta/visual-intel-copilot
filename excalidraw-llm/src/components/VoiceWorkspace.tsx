@@ -220,15 +220,17 @@ export function VoiceWorkspace({ onNavigate }: VoiceWorkspaceProps) {
   const handleOpenHistory = async () => {
     setShowHistory(true);
     try {
-      if (user) {
-        const summaries = await getCloudSessionsSummary(user.id);
-        setHistorySummaries(summaries);
-      } else {
-        const localSummaries = await getAllSessionsSummary();
+      // 1. Prioritize local IndexedDB summaries first
+      const localSummaries = await getAllSessionsSummary();
+      if (localSummaries.length > 0 || !user) {
         setHistorySummaries(localSummaries);
+      } else {
+        // 2. Fallback to Supabase Cloud if local is empty and user is logged in
+        const cloudSummaries = await getCloudSessionsSummary(user.id);
+        setHistorySummaries(cloudSummaries);
       }
     } catch (e) {
-      console.warn('Cloud history unavailable, falling back to local history:', e);
+      console.warn('History retrieval error, falling back to local history:', e);
       const localSummaries = await getAllSessionsSummary().catch(() => []);
       setHistorySummaries(localSummaries);
     }
@@ -236,12 +238,21 @@ export function VoiceWorkspace({ onNavigate }: VoiceWorkspaceProps) {
 
   const handleExportSessionPdf = async (targetSessionId: string) => {
     try {
-      let turns: SessionTurnRecord[] = [];
-      if (user) {
-        turns = await getCloudSessionTurns(user.id, targetSessionId).catch(() => getSessionTurns(targetSessionId));
-      } else {
-        turns = await getSessionTurns(targetSessionId);
+      console.log(`[PDF] 📄 Generating Voice PDF for session=${targetSessionId}. Checking IndexedDB first...`);
+      // 1. Check local IndexedDB first
+      let turns: SessionTurnRecord[] = await getSessionTurns(targetSessionId);
+
+      // 2. Fallback to Supabase Cloud if IndexedDB has no turns
+      if (turns.length === 0 && user) {
+        console.log(`[PDF] ☁️ IndexedDB empty for session=${targetSessionId}. Falling back to Supabase Cloud...`);
+        turns = await getCloudSessionTurns(user.id, targetSessionId).catch(() => []);
       }
+
+      if (turns.length === 0) {
+        throw new Error('No turns found for this session to export.');
+      }
+
+      console.log(`[PDF] 🚀 Exporting PDF with ${turns.length} turns for session=${targetSessionId}`);
       await exportSessionToPdf(targetSessionId, turns);
     } catch (e: unknown) {
       const err = e as Error;
@@ -253,13 +264,11 @@ export function VoiceWorkspace({ onNavigate }: VoiceWorkspaceProps) {
 
   const confirmDeleteSession = async (targetSessionId: string) => {
     try {
+      await deleteSessionTurns(targetSessionId);
       if (user) {
         await deleteCloudSession(user.id, targetSessionId).catch(() => {});
       }
-      await deleteSessionTurns(targetSessionId);
-      const updatedSummaries = user
-        ? await getCloudSessionsSummary(user.id).catch(() => getAllSessionsSummary())
-        : await getAllSessionsSummary();
+      const updatedSummaries = await getAllSessionsSummary().catch(() => []);
       setHistorySummaries(updatedSummaries);
     } catch (e) {
       console.error('Failed to delete session:', e);
@@ -268,12 +277,14 @@ export function VoiceWorkspace({ onNavigate }: VoiceWorkspaceProps) {
 
   const handleRestoreSession = async (targetSessionId: string) => {
     try {
-      let turns: SessionTurnRecord[] = [];
-      if (user) {
-        turns = await getCloudSessionTurns(user.id, targetSessionId).catch(() => getSessionTurns(targetSessionId));
-      } else {
-        turns = await getSessionTurns(targetSessionId);
+      // 1. Check local IndexedDB first
+      let turns: SessionTurnRecord[] = await getSessionTurns(targetSessionId);
+
+      // 2. Fallback to Supabase Cloud if IndexedDB has no turns
+      if (turns.length === 0 && user) {
+        turns = await getCloudSessionTurns(user.id, targetSessionId).catch(() => []);
       }
+
       if (turns.length === 0) return;
 
       setSessionId(targetSessionId);

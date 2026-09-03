@@ -380,11 +380,23 @@ export async function generateDiagramWithOllama(
 
     let followUpResponse: Response | null = null;
     try {
-      followUpResponse = await fetch(url, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(followUpBody)
-      });
+      if (isRemote) {
+        followUpResponse = await fetch('/api/proxy', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            targetUrl: url,
+            headers,
+            body: followUpBody
+          })
+        });
+      } else {
+        followUpResponse = await fetch(url, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(followUpBody)
+        });
+      }
     } catch {
       followUpResponse = await fetch('/api/proxy', {
         method: 'POST',

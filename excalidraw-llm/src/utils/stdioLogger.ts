@@ -48,6 +48,27 @@ function safeSerialize(arg: any): any {
   return arg;
 }
 
+export function logDirectToStdio(
+  level: 'INFO' | 'WARN' | 'ERROR' | 'DEBUG' | 'TOOL',
+  tag: string,
+  message: string,
+  details?: any
+): void {
+  if (typeof window === 'undefined') return;
+  try {
+    fetch('/api/log', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        level,
+        tag: tag || 'APP',
+        message,
+        details: details !== undefined ? safeSerialize(details) : undefined
+      })
+    }).catch(() => {});
+  } catch {}
+}
+
 function sendLogToStdio(level: 'INFO' | 'WARN' | 'ERROR' | 'DEBUG' | 'TOOL', args: any[]) {
   if (typeof window === 'undefined' || args.length === 0) return;
 

@@ -373,17 +373,21 @@ export function AgenticWorkspace({ onNavigate }: AgenticWorkspaceProps) {
   }, [isLiveAgentRunning, getOrCreateLiveAgent]);
 
   const loadHistorySummaries = useCallback(async () => {
+    // 1. Prioritize local IndexedDB summaries first
+    const localSummaries = await getAllSessionsSummary();
+    if (localSummaries.length > 0 || !user) {
+      setHistorySummaries(localSummaries);
+      return;
+    }
+    // 2. Fallback to Supabase Cloud if local is empty and user is logged in
     if (user) {
       try {
         const cloudSummaries = await getCloudSessionsSummary(user.id);
         setHistorySummaries(cloudSummaries);
-        return;
       } catch (err) {
         appLogger.warn('HISTORY', `Cloud session listing notice: ${err}`);
       }
     }
-    const localSummaries = await getAllSessionsSummary();
-    setHistorySummaries(localSummaries);
   }, [user]);
 
   const handleOpenHistory = () => {
@@ -393,16 +397,14 @@ export function AgenticWorkspace({ onNavigate }: AgenticWorkspaceProps) {
 
   const handleRestoreSession = async (targetSessionId: string) => {
     stopAudioResponse();
-    let turns: SessionTurnRecord[] = [];
-    if (user) {
+    // 1. Check local IndexedDB first
+    let turns: SessionTurnRecord[] = await getSessionTurns(targetSessionId);
+    if (turns.length === 0 && user) {
       try {
         turns = await getCloudSessionTurns(user.id, targetSessionId);
       } catch (err) {
         appLogger.warn('RESTORE', `Cloud restore fallback: ${err}`);
       }
-    }
-    if (turns.length === 0) {
-      turns = await getSessionTurns(targetSessionId);
     }
     if (turns.length === 0) return;
 
@@ -432,6 +434,7 @@ export function AgenticWorkspace({ onNavigate }: AgenticWorkspaceProps) {
   };
 
   const handleDeleteSession = async (targetSessionId: string) => {
+    await deleteSessionTurns(targetSessionId);
     if (user) {
       try {
         await deleteCloudSession(user.id, targetSessionId);
@@ -439,7 +442,6 @@ export function AgenticWorkspace({ onNavigate }: AgenticWorkspaceProps) {
         appLogger.warn('DELETE', `Cloud delete notice: ${err}`);
       }
     }
-    await deleteSessionTurns(targetSessionId);
     loadHistorySummaries();
     if (sessionId === targetSessionId) {
       handleNewSession();
@@ -447,18 +449,19 @@ export function AgenticWorkspace({ onNavigate }: AgenticWorkspaceProps) {
   };
 
   const handleExportPdf = async (targetSessionId: string) => {
-    let turns: SessionTurnRecord[] = [];
-    if (user) {
+    console.log(`[PDF] 📄 Generating Audio Studio PDF for session=${targetSessionId}. Checking IndexedDB first...`);
+    // 1. Check local IndexedDB first
+    let turns: SessionTurnRecord[] = await getSessionTurns(targetSessionId);
+    if (turns.length === 0 && user) {
+      console.log(`[PDF] ☁️ IndexedDB empty for session=${targetSessionId}. Falling back to Supabase Cloud...`);
       try {
         turns = await getCloudSessionTurns(user.id, targetSessionId);
       } catch (err) {
         appLogger.warn('PDF', `Cloud PDF turns notice: ${err}`);
       }
     }
-    if (turns.length === 0) {
-      turns = await getSessionTurns(targetSessionId);
-    }
     if (turns.length === 0) return;
+    console.log(`[PDF] 🚀 Exporting PDF with ${turns.length} turns for session=${targetSessionId}`);
     exportSessionToPdf(targetSessionId, turns);
   };
 

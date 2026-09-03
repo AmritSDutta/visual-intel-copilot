@@ -47,8 +47,14 @@ export async function saveSessionTurn(record: SessionTurnRecord): Promise<void> 
     const store = tx.objectStore(STORE_NAME);
     const request = store.put(record);
 
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      console.log(`[INDEXEDDB] 💾 Saved turn locally: session=${record.session_id}, turn=${record.turn_id}`);
+      resolve();
+    };
+    request.onerror = () => {
+      console.error(`[INDEXEDDB] ❌ Failed to save turn: session=${record.session_id}, turn=${record.turn_id}`, request.error);
+      reject(request.error);
+    };
   });
 }
 
@@ -64,9 +70,13 @@ export async function getSessionTurns(sessionId: string): Promise<SessionTurnRec
       const turns: SessionTurnRecord[] = request.result || [];
       // Sort chronologically by created_at then turn_id
       turns.sort((a, b) => a.created_at.localeCompare(b.created_at) || a.turn_id.localeCompare(b.turn_id));
+      console.log(`[INDEXEDDB] 📖 Retrieved ${turns.length} turns for session=${sessionId}`);
       resolve(turns);
     };
-    request.onerror = () => reject(request.error);
+    request.onerror = () => {
+      console.error(`[INDEXEDDB] ❌ Failed to get turns for session=${sessionId}:`, request.error);
+      reject(request.error);
+    };
   });
 }
 
@@ -102,9 +112,13 @@ export async function getAllSessionsSummary(): Promise<SessionSummary[]> {
 
       // Sort sessions by latest activity descending
       summaries.sort((a, b) => b.latest_created_at.localeCompare(a.latest_created_at));
+      console.log(`[INDEXEDDB] 📜 Loaded ${summaries.length} sessions from local cache`);
       resolve(summaries);
     };
-    request.onerror = () => reject(request.error);
+    request.onerror = () => {
+      console.error('[INDEXEDDB] ❌ Failed to load session summaries:', request.error);
+      reject(request.error);
+    };
   });
 }
 
@@ -120,8 +134,14 @@ export async function deleteSessionTurns(sessionId: string): Promise<void> {
       store.delete([turn.session_id, turn.turn_id]);
     }
 
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
+    tx.oncomplete = () => {
+      console.log(`[INDEXEDDB] 🗑️ Deleted session=${sessionId} (${turns.length} turns)`);
+      resolve();
+    };
+    tx.onerror = () => {
+      console.error(`[INDEXEDDB] ❌ Failed to delete session=${sessionId}:`, tx.error);
+      reject(tx.error);
+    };
   });
 }
 
@@ -131,7 +151,13 @@ export async function clearAllLocalCache(): Promise<void> {
     const tx = db.transaction(STORE_NAME, 'readwrite');
     const store = tx.objectStore(STORE_NAME);
     const request = store.clear();
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      console.log('[INDEXEDDB] 🧹 Cleared entire local cache database');
+      resolve();
+    };
+    request.onerror = () => {
+      console.error('[INDEXEDDB] ❌ Failed to clear local cache database:', request.error);
+      reject(request.error);
+    };
   });
 }
