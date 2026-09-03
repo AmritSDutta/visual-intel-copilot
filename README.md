@@ -451,6 +451,68 @@ The orchestrator's main entry-point tool: delegates to the **Canvas Diagram Engi
 
 ---
 
+## 🛠️ Build & Manual Testing Guide
+
+### 1. Build & Run
+```bash
+# Navigate to application folder
+cd excalidraw-llm
+
+# Install dependencies
+npm install
+
+# Run TypeScript compilation and production build
+npm run build
+
+# Start local development server
+npm run dev
+
+# Or test the production build locally
+npm run preview
+```
+
+### 2. Manual Test Validation Workflow
+* **Canvas Mode (`/`)**:
+  1. Open **Settings (⚙️)** in the header. Select your AI provider (**Gemini** or **Ollama Cloud**), enter a temporary API key, and select a model preset.
+  2. Enter a system architecture prompt in the Chat panel (e.g., *"Draw an event-driven payment processing system with Kafka, Redis, and PostgreSQL"*).
+  3. Verify that the AI orchestrator executes tool calling (`generate_diagram_and_explanation`), streams the chat reply, and renders vector elements on the canvas.
+  4. Test the **Canvas Lock toggle (`🔒` / `✏️`)** to verify AI-only view-mode versus manual editing.
+  5. Test **Export PDF** and verify the paginated document includes prompts and canvas snapshots.
+  6. Open **History** to test turn restoration and turn deletion.
+* **Voice Mode (`/voice`)**:
+  1. Navigate to `/voice`.
+  2. Click the microphone button and grant mic permissions.
+  3. Speak a command (e.g., *"Draw a Kubernetes cluster with an ingress and three worker pods"*).
+  4. Verify the bidirectional audio stream: the agent speaks back while the canvas updates live.
+
+---
+
+## 🛡️ Security & Local-First Privacy Features
+
+* **🏠 100% Client-Side Privacy (Local-First Storage)**:
+  - For the hackathon evaluation, cloud database persistence is turned off so all validator session history, canvas states, and turn snapshots **stay 100% local to your browser in IndexedDB (`ExcalidrawAISessionsDB`)**.
+  - No validator diagrams or session data are stored on external shared databases.
+* **🔐 Client-Side AES-GCM-256 Encryption**:
+  - API keys (`GEMINI_API_KEY`, `OLLAMA_API_KEY`) are encrypted in `localStorage` using the Web Crypto API (`AES-GCM-256`).
+  - Master encryption keys are stored non-extractably in browser IndexedDB (`ExcalidrawSecureVault`).
+* **🔒 Strict Transport Security (HSTS) & Security Headers**:
+  - `Strict-Transport-Security: max-age=31536000; includeSubDomains; preload` enforces 1-year HTTPS across all routes.
+  - Comprehensive `Content-Security-Policy`, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, and `Referrer-Policy: strict-origin-when-cross-origin`.
+* **🛡️ SSRF & Open-Relay Protection**:
+  - Edge function proxy (`/api/proxy`) enforces a strict hostname allowlist (`ollama.com`, `generativelanguage.googleapis.com`) and restricts header forwarding to `Authorization`.
+
+---
+
+## ⚠️ Important Advisory for Evaluators & Testers
+
+> [!WARNING]
+> **Use Temporary Credentials**: When testing the application with external providers (Google Gemini or Ollama Cloud):
+> 1. Always generate a **temporary / restricted test API key**.
+> 2. Avoid using production API keys with sensitive billing or project access.
+> 3. After completing testing and validation, immediately **delete / revoke** the key from your provider dashboard (e.g. [Google AI Studio](https://aistudio.google.com/app/apikey)).
+
+---
+
 ## 📜 License
 
 MIT License. Built for seamless AI-driven diagramming!
