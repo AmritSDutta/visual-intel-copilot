@@ -3,6 +3,7 @@ import { createCanvasTools } from './canvasTools';
 import { generateTextExplanationWithGroq } from './providers';
 import { generateDiagramElementsWithMistral } from './providers';
 import { generateDiagramFromPrompt } from './providers';
+import { webMcpTools } from '../services/webMcpService';
 
 export interface MultiAgentToolsConfig {
   geminiApiKey: string;
@@ -108,5 +109,19 @@ export function createMultiAgentTools(config: MultiAgentToolsConfig): AdkTool[] 
     }
   ];
 
-  return [...canvasTools, ...subagentTools];
+  // 3. WebMCP Tools (Read-only browser-level tools)
+  const webMcpAdkTools: AdkTool[] = webMcpTools.map((t) => ({
+    name: t.name,
+    description: t.description,
+    parameters: {
+      type: 'object',
+      properties: t.inputSchema.properties || {},
+      required: (t.inputSchema.required as string[]) || []
+    },
+    execute: async (args: Record<string, any>) => {
+      return await t.execute(args);
+    }
+  }));
+
+  return [...canvasTools, ...subagentTools, ...webMcpAdkTools];
 }

@@ -237,7 +237,7 @@ export function useMainWorkspace() {
         )
       }
 
-      if (excalidrawAPI) {
+      if (excalidrawAPI && Array.isArray(result.elements) && result.elements.length > 0) {
         excalidrawAPI.updateScene({
           elements: result.elements,
           appState: {
