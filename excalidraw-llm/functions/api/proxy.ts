@@ -1,41 +1,63 @@
-export async function onRequestPost(context: any) {
-  try {
-    const reqJson = await context.request.json();
-    const { targetUrl, body, headers: customHeaders } = reqJson;
+/**
+ * Cloudflare Pages Function: /api/proxy
+ * Handles external AI API requests (such as Ollama Cloud or Gemini endpoints)
+ * when deployed on Cloudflare Pages without CORS limitations.
+ */
 
-    if (!targetUrl) {
-      return new Response(JSON.stringify({ error: 'Missing targetUrl parameter' }), {
+interface Env {}
+
+export async function onRequestPost(context: { request: Request; env: Env }): Promise<Response> {
+  try {
+    const { targetUrl, body, headers } = (await context.request.json()) as {
+      targetUrl: string;
+      body?: any;
+      headers?: Record<string, string>;
+    };
+
+    if (!targetUrl || typeof targetUrl !== 'string') {
+      return new Response(JSON.stringify({ error: 'Missing or invalid targetUrl' }), {
         status: 400,
         headers: { 'Content-Type': 'application/json' }
       });
     }
 
+    const forwardHeaders: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...(headers || {})
+    };
+
     const response = await fetch(targetUrl, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(customHeaders || {})
-      },
-      body: JSON.stringify(body)
+      headers: forwardHeaders,
+      body: JSON.stringify(body || {})
     });
 
-    const responseData = await response.text();
-    return new Response(responseData, {
+    const data = await response.text();
+
+    return new Response(data, {
       status: response.status,
       headers: {
         'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*'
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization'
       }
     });
   } catch (err: any) {
-    return new Response(JSON.stringify({ error: err?.message || 'Proxy fetch failed' }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' }
-    });
+    return new Response(
+      JSON.stringify({ error: err?.message || 'Cloudflare edge proxy failed' }),
+      {
+        status: 500,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*'
+        }
+      }
+    );
   }
 }
 
-export async function onRequestOptions() {
+export async function onRequestOptions(): Promise<Response> {
   return new Response(null, {
     status: 204,
     headers: {

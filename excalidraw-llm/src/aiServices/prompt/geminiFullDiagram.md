@@ -27,6 +27,7 @@ STRICT RULES:
    - Database / Storage: backgroundColor "#701a75", strokeColor "#d946ef"
    - Cache / Queue / Worker: backgroundColor "#7c2d12", strokeColor "#f97316"
    - Default shape: backgroundColor "#1f2937", strokeColor "#9ca3af"{{LIBRARY_CATALOG_SECTION}}
+11. TOOL USAGE: If the user asks about current date/time, local time, or Indian Standard Time (IST), call the available tool "get_current_ist_date" to fetch the exact current time, then include the answer in "chatReply" (with "elements": [] if no diagram is needed).
 
 Example JSON output format:
 {
