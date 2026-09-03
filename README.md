@@ -1,6 +1,6 @@
 # Inquisitive | Visual Intel — AI Diagram Generator 🎨⚡
 
-An intelligent, interactive diagramming assistant built with **React 19**, **TypeScript**, **Vite**, and **@excalidraw/excalidraw** — powered by **Ollama** (local or cloud models like `gemma4:31b-cloud`) and the **Google Gemini API** (`gemini-3.1-flash-lite`). Describe a system in plain English and watch a full Excalidraw diagram render live on canvas.
+An intelligent, interactive diagramming assistant built with **React 19**, **TypeScript**, **Vite**, and **@excalidraw/excalidraw** — powered by the **Google Gemini API** (`gemini-3.5-flash-lite`) and **Ollama** (cloud models like `gemma4:31b-cloud`). A **tool-calling orchestrator agent** plans and drives a live Excalidraw canvas through **WebMCP (Model Context Protocol) tools** — describe a system in plain English (type it or say it) and watch the diagram render in real time.
 
 > **In-app brand:** *Inquisitive — Visual Intelligence*
 
@@ -9,60 +9,74 @@ An intelligent, interactive diagramming assistant built with **React 19**, **Typ
 ## 🌟 Key Features
 
 ### 1. 📐 70% / 30% Split Layout Workspace
-- **Left Panel (70%)**: Full-featured Excalidraw editor canvas.
-- **Right Panel (30%)**: Sleek dark-mode AI Chat UI for issuing diagram requests and managing settings.
+- **Left Panel (70%)**: Full-featured Excalidraw editor canvas (`ExcalidrawCanvas.tsx`).
+- **Right Panel (30%)**: Sleek dark-mode AI Chat UI (`ChatPanel.tsx`) for issuing diagram requests and managing settings.
 
-### 2. 🦙 Ollama Integration (Cloud & Remote Models)
+### 2. 🧠 Agentic Orchestration with WebMCP Tool Calling
+- A **Canvas Orchestrator Agent** (`runCanvasOrchestratorAgent`) plans over **9 WebMCP tools** registered on `navigator.modelContext` / `window.modelContext` and executes them against the live canvas via an `ActiveCanvasBridge` (`useMainWorkspace` → `webMcpService`).
+- **Gemini track**: native function-calling loop (up to 5 turns). **Ollama track**: native `tools` calling over the `/api/proxy` relay.
+- Conceptual/architectural questions are answered directly in the chat; draw/modify requests are routed to the right tool automatically.
+
+### 3. 🦙 Ollama Integration (Cloud & Remote Proxies)
 - Connects to the Ollama cloud host (`https://ollama.com`) or custom remote cloud/proxy endpoints with optional Bearer API key.
 - Automatic routing through the built-in `/api/proxy` relay when direct browser calls are blocked by CORS/mixed-content policies.
+- Model presets from the centralized registry: `gemma4:31b-cloud` (default), `gpt-oss:120b`, `nemotron-3-super`.
 
-### 3. ✨ Gemini Cloud API Integration (`@google/genai` SDK)
-- Supports `gemini-3.1-flash-lite` (default) with automatic fallback through candidate models on failure.
-- **Canvas-aware editing**: the current canvas is attached to the request as a PNG snapshot (`inlineData`), so Gemini can *edit and extend* an existing diagram — not just create new ones.
+### 4. ✨ Gemini Cloud API Integration (`@google/genai` SDK)
+- **Centralized model registry** (`config/aiModelsConfig.ts`): a single `TASK_MODEL_REGISTRY` maps every AI task (Canvas orchestrator, Canvas diagram engine, Voice live agent, Ollama chat) to a primary model, fallback chain, temperature, and token budget.
+- `gemini-3.5-flash-lite` (primary) with automatic fallback to `gemini-3.1-flash-lite` on failure.
+- A dedicated **Canvas Diagram Engine subagent** produces the structured vector payload; prompts live as editable `.md` templates in `src/aiServices/prompt/` (inlined at build time).
 
-### 4. 🎙️ Voice Mode (`/voice`)
-- A dedicated voice workspace route with **Gemini Live native audio** models (`gemini-2.5-flash-native-audio-preview-12-2025` and `gemini-3.1-flash-live-preview`) plus a **Web Speech API** fallback (speech recognition + speech synthesis).
+### 5. 🎙️ Voice Agent (`/voice`)
+- A dedicated voice workspace route driven by **Gemini Live native audio** (`gemini-2.5-flash-native-audio-preview-12-2025` primary, `gemini-3.1-flash-live-preview` fallback) with the **same 9 WebMCP tools available mid-conversation** — say *"add a Redis cache"* and watch the canvas update while you talk.
+- **Web Speech API** fallback (speech recognition + speech synthesis) when Live models are unavailable, plus studio voice selection.
 - Live mic indicator, mute toggle, and audio signal visualization in the header.
 
-### 5. 🔐 Supabase Authentication (Google OAuth)
+### 6. 🔐 Encrypted API Key Vault (AES-GCM-256)
+- Gemini/Ollama API keys are **encrypted at rest** in `localStorage` using the Web Cryptography API (`utils/cryptoStorage.ts`) with a **non-extractable AES-GCM-256 master key** persisted in IndexedDB (`ExcalidrawSecureVault`) — raw key bytes can't be lifted even via XSS.
+- Ciphertext carries a `__ENC__:v1:` prefix; corrupt/un-decryptable ciphertext is purged and never surfaced to the UI or state.
+
+### 7. 🔐 Supabase Authentication (Google OAuth)
 - Mandatory sign-in via **Google OAuth** (Supabase Auth), with an auth landing screen and a configuration-missing fallback screen when env vars are absent.
-- All cloud session data is **Row Level Security (RLS) isolated** per user.
+- Cloud session data is **Row Level Security (RLS) isolated** per user.
 
-### 6. 🗂️ Session History — Local & Cloud
+### 8. 🗂️ Session History — Local-First, Cloud Fallback
 - Every turn auto-saves to **IndexedDB** (`ExcalidrawAISessionsDB`, store `session_turns`, composite key `[session_id, turn_id]`) including a base64 PNG snapshot of the canvas.
-- Signed-in users get the same history synced to **Supabase** (`user_sessions` + `session_turns` tables).
-- History panel supports **restore-to-canvas** and **delete**.
+- History, **restore-to-canvas**, PDF export, and delete flows all read **local IndexedDB first**, falling back to **Supabase** (`user_sessions` + `session_turns` with RLS) only when local is empty and you're signed in.
 
-### 7. 📄 PDF & 📷 PNG Export
+### 9. 📄 PDF & 📷 PNG Export
 - Export any session as a paginated **PDF report** (jsPDF) with prompts, canvas snapshots, and AI responses per turn.
 - Export the current canvas as a **PNG** via Excalidraw's dynamically imported `exportToCanvas` / `exportToBlob`.
 
-### 8. 📚 Advanced `.excalidrawlib` Library Catalog Indexer
+### 10. 📚 Advanced `.excalidrawlib` Library Catalog Indexer
 - **Compact Catalog Indexer**: reads `public/my-custom-library.excalidrawlib` (73+ custom stencil items like servers, databases, cloud icons) into a lightweight `{ id, name }` JSON index (**only ~550 tokens overhead**) injected into the AI system prompt.
 - **Element Hydrator**: clones matched library vector groups and offsets them to the requested `(x, y)` at render time — full vector definitions are never sent to the LLM.
 
-### 9. 💬 2-Part Structured AI Response
-- The AI returns a single JSON payload:
-  1. `chatReply` (string): structured plain-text architectural explanation (300–500 words, markdown stripped) shown in the Chat UI bubble.
+### 11. 💬 2-Part Structured AI Response
+- The diagram engine returns a single JSON payload:
+  1. `chatReply` (string): structured plain-text architectural explanation (markdown stripped) shown in the Chat UI bubble.
   2. `elements` (array): complete Excalidraw vector elements and library items rendered live on the canvas.
 
-### 10. 🔗 Perimeter Edge-to-Edge Arrow Connections
+### 12. 🔗 Perimeter Edge-to-Edge Arrow Connections
 - Automatically calculates shape bounding boxes and connects arrows from the **outer edge of Shape A to the outer edge of Shape B**, preventing lines from crossing inside text labels.
 - Injects relative vector points `[[0,0], [dx,dy]]`, `strokeWidth: 2`, and triangle `endArrowhead`.
 
-### 11. 🧠 Resilient JSON Repair
+### 13. 🧠 Resilient JSON Repair
 - `repairAndParseJson` tolerates truncated/loose LLM output: trailing commas, unescaped newlines in strings, unclosed braces/brackets, and strings cut off mid-quote.
 
-### 12. 🧹 Scene Lifecycle & 🔒 AI-Only Canvas Mode
-- Every prompt calls `excalidrawAPI.resetScene()` before rendering — each turn **replaces** the canvas rather than stacking shapes.
+### 14. 🧹 Scene Lifecycle & 🔒 AI-Only Canvas Mode
+- Diagram turns replace the canvas scene via `updateScene` with `commitToHistory` + `scrollToContent`; incremental tool actions (`append_canvas_elements`, `modify_canvas_node`) mutate the live scene without wiping it. New sessions reset the scene with `resetScene()`.
 - `<Excalidraw viewModeEnabled={isCanvasFrozen} />` (defaulting to `true`) locks manual mouse drawing/editing to prevent accidental canvas clutter.
 - Canvas navigation (pan & zoom) remains 100% active, while all diagram updates are exclusively driven by AI. Includes a lock toggle button in the header (`🔒` / `✏️`).
 
-### 13. 🌗 Dark / Light Theme
+### 15. 🌗 Dark / Light Theme
 - Toggle between themes from the header; persisted to `localStorage` (`APP_THEME`).
 
-### 14. 📦 100% Self-Hosted Excalidraw Assets
+### 16. 📦 100% Self-Hosted Excalidraw Assets
 - Configured `window.EXCALIDRAW_ASSET_PATH = "/"` with 230+ font and asset files self-hosted in `public/`, eliminating third-party CDN dependencies.
+
+### 17. 📡 Terminal Stdio Logging
+- Browser-side logs, AI tool executions, and errors are streamed to your **dev terminal** through the `/api/log` Vite middleware (color-coded levels) and mirrored in production by the `functions/api/log.ts` Cloudflare Pages function.
 
 ---
 
@@ -71,8 +85,8 @@ An intelligent, interactive diagramming assistant built with **React 19**, **Typ
 ### 1. Prerequisites
 - **Node.js**: v18 or later
 - **Supabase project** (required for auth — free tier works): [supabase.com](https://supabase.com)
-- **Ollama** (for local/offline AI): install from [ollama.com](https://ollama.com)
-- **Gemini API key** (for Gemini or Voice mode): from [Google AI Studio](https://aistudio.google.com)
+- **Gemini API key** (for Gemini canvas mode + the Voice agent): from [Google AI Studio](https://aistudio.google.com)
+- **Ollama cloud account** (optional, for Ollama models like `gemma4:31b-cloud`): [ollama.com](https://ollama.com)
 
 ### 2. Local Setup
 ```bash
@@ -98,11 +112,15 @@ npm run dev
    ```text
    VITE_SUPABASE_URL=https://your-supabase-project.supabase.co
    VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
+
+   # Optional AI key fallbacks (in-app keys take priority)
+   VITE_GEMINI_API_KEY=your-gemini-api-key
+   VITE_OLLAMA_API_KEY=your-ollama-api-key
    ```
 4. Restart the dev server.
 
 ### 4. Running with Ollama
-The app connects to **Ollama Cloud (`https://ollama.com`)** by default. Calls to `https://ollama.com` are securely relayed through the `/api/proxy` backend (a Cloudflare Pages function in production, and a Vite dev middleware locally). Custom remote proxy/server URLs can also be configured in the in-app Settings (⚙️) panel.
+The app connects to **Ollama Cloud (`https://ollama.com`)** by default. Calls to `https://ollama.com` are securely relayed through the `/api/proxy` backend (a Cloudflare Pages function in production, and a Vite dev middleware locally). Custom remote proxy/server URLs can also be configured in the in-app Settings (⚙️) panel. Switch providers (Ollama ⇄ Gemini) from the Settings panel at any time.
 
 ---
 
@@ -114,6 +132,8 @@ The app connects to **Ollama Cloud (`https://ollama.com`)** by default. Calls to
 |---|---|
 | `VITE_SUPABASE_URL` | Your Supabase project URL (**required**) |
 | `VITE_SUPABASE_ANON_KEY` | Your Supabase anon key (**required**) |
+| `VITE_GEMINI_API_KEY` | Optional Gemini key fallback (in-app key takes priority) |
+| `VITE_OLLAMA_API_KEY` | Optional Ollama key fallback (in-app key takes priority) |
 
 ### In-App Settings Panel
 
@@ -121,28 +141,42 @@ Click the **⚙️** button in the header to configure:
 
 | Setting | Storage key | Default |
 |---|---|---|
-| AI Provider | `AI_PROVIDER` | `ollama` (Canvas) / `gemini` (Voice) |
+| AI Provider | `AI_PROVIDER` | `ollama` |
 | Ollama Endpoint | `OLLAMA_ENDPOINT` | `https://ollama.com` |
 | Ollama Model | `OLLAMA_MODEL` | `gemma4:31b-cloud` |
-| Ollama API Key (optional) | `OLLAMA_API_KEY` | — |
-| Gemini Model | `GEMINI_MODEL` | `gemini-3.1-flash-lite` |
-| Gemini API Key | `GEMINI_API_KEY` | — |
+| Ollama API Key (optional) | `OLLAMA_API_KEY` | — (encrypted) |
+| Gemini Model | `GEMINI_MODEL` | `gemini-3.5-flash-lite` |
+| Gemini API Key | `GEMINI_API_KEY` | — (encrypted) |
 
-> 🔒 All AI provider settings are stored in **`sessionStorage`** (cleared when the tab closes — never persisted or committed). Only the theme (`APP_THEME`) is stored in `localStorage`.
+> 🔒 **Key hygiene**: provider/model settings mirror to `sessionStorage` (fast session reads) and `localStorage` (persistence). API keys are **never stored in plaintext at rest** — they are AES-GCM-256 encrypted in `localStorage` (see Feature 6) and only kept as plaintext in in-memory `sessionStorage` for the current tab. Only the theme (`APP_THEME`) is stored in `localStorage` unencrypted.
+
+### AI Task Model Registry (`src/config/aiModelsConfig.ts`)
+
+A single source of truth maps every AI task to its primary model, fallback chain, temperature, and token budget:
+
+| Task | Primary model | Fallback | Temp | Max tokens |
+|---|---|---|---|---|
+| `CANVAS_MAIN_AGENT` (orchestrator) | `gemini-3.5-flash-lite` | `gemini-3.1-flash-lite` | 0.2 | 8192 |
+| `CANVAS_DIAGRAM_ENGINE` (subagent) | `gemini-3.5-flash-lite` | `gemini-3.1-flash-lite` | 0.2 | 8192 |
+| `VOICE_LIVE_AGENT` | `gemini-2.5-flash-native-audio-preview-12-2025` | `gemini-3.1-flash-live-preview` | 0.3 | 4096 |
+| `OLLAMA_CHAT` | `gemma4:31b-cloud` | — | 0.2 | 8192 |
 
 ---
 
 ## 🏗️ Architecture
 
-A prompt flows through a **5-stage pipeline** spanning `aiService.ts`, `libraryIndexer.ts`, `jsonRepair.ts`, and the workspace components:
+A prompt flows through an **agentic tool-calling pipeline** spanning `aiService.ts`, `webMcpService.ts`, `libraryIndexer.ts`, and `jsonRepair.ts`:
 
-1. **Contract** — `getSystemInstruction()` in `aiService.ts` builds the system prompt that forces the model to return a single JSON object with `chatReply` and `elements`, and injects the compact library catalog. **This prompt is the contract for both backends.**
-2. **Backend call** — `generateDiagramWithOllama` (REST `POST {endpoint}/api/chat`, `format: 'json'`) or `generateDiagramFromPrompt` (Gemini SDK, `responseMimeType: 'application/json'`, `temperature: 0.2`). The Gemini path also attaches the current canvas as a PNG so the model can edit existing diagrams.
-3. **Parse** — `extractJsonPayload` strips code fences; `repairAndParseJson` repairs truncated/loose LLM JSON.
-4. **Hydrate** — `hydrateSkeletonsWithLibrary` resolves `libraryItem` references by cloning library vectors, and computes perimeter edge-to-edge arrow endpoints from shape bounds.
-5. **Render** — `processResponseJson` runs `convertToExcalidrawElements(skeletons, { regenerateIds: false })`, then the workspace calls `resetScene()` + `updateScene({ elements, scrollToContent: true })`.
+1. **Orchestrate** — `runCanvasOrchestratorAgent()` in `aiService.ts` sends the recent conversation + current query with all **9 WebMCP tools as function declarations** to the `CANVAS_MAIN_AGENT` model. Gemini uses native function calling; Ollama uses native `tools` calling (relayed through `/api/proxy` when remote) — both loop for up to **5 tool turns**. Conceptual questions are answered directly without touching the canvas.
+2. **Execute tools** — tool calls execute against the live scene through the `ActiveCanvasBridge` registered by `useMainWorkspace.ts` (`getElements` / `setElements` / `generateDiagram` / `getSnapshotBase64` / `getChatMessages`). `generate_diagram_and_explanation` delegates to the **Canvas Diagram Engine subagent** (`CANVAS_DIAGRAM_ENGINE` task).
+3. **Contract** — `getSystemInstruction()` (from the editable `src/aiServices/prompt/*.md` templates, with `{{PLACEHOLDER}}` tokens filled at runtime) builds the system prompt that forces the diagram engine to return a single JSON object with `chatReply` and `elements`, and injects the compact library catalog. **This prompt is the contract for both backends.**
+4. **Parse** — `extractJsonPayload` strips code fences; `repairAndParseJson` repairs truncated/loose LLM JSON.
+5. **Hydrate** — `hydrateSkeletonsWithLibrary` resolves `libraryItem` references by cloning library vectors, and computes perimeter edge-to-edge arrow endpoints from shape bounds.
+6. **Render** — `processResponseJson` runs `convertToExcalidrawElements(skeletons, { regenerateIds: false })`, then the bridge calls `updateScene({ elements, scrollToContent: true, commitToHistory: true })`.
 
-**Data flow:** AI settings → `sessionStorage` · theme → `localStorage` · session turns → **IndexedDB** (`ExcalidrawAISessionsDB`) locally, **Supabase** (`user_sessions` / `session_turns` with RLS) for signed-in users · sessions exportable to PDF.
+**Voice flow:** `VoiceWorkspace.tsx` → `voiceService.ts` opens a persistent **Gemini Live** native-audio session with the same 9 tools as function declarations; the voice agent calls tools mid-conversation against the same canvas bridge, with a **Web Speech API** fallback when Live models are unavailable.
+
+**Data flow:** AI settings → `sessionStorage` + `localStorage` (API keys **AES-GCM-256 encrypted**) · theme → `localStorage` · session turns → **IndexedDB** (`ExcalidrawAISessionsDB`) locally first, **Supabase** (`user_sessions` / `session_turns` with RLS) as signed-in fallback · browser logs → `/api/log` → terminal stdio · sessions exportable to PDF.
 
 ---
 
@@ -151,35 +185,63 @@ A prompt flows through a **5-stage pipeline** spanning `aiService.ts`, `libraryI
 ```
 excalidraw-llm/
 ├── index.html                  # Sets window.EXCALIDRAW_ASSET_PATH = "/"
-├── vite.config.ts              # React plugin + local /api/proxy middleware
+├── vite.config.ts              # React plugin + local /api/proxy + /api/log middlewares
 ├── supabase/
 │   └── schema.sql              # Tables + RLS policies (run in Supabase SQL editor)
 ├── functions/
-│   └── api/proxy.ts            # Cloudflare Pages function: CORS relay for Ollama
+│   └── api/
+│       ├── proxy.ts            # Cloudflare Pages function: CORS relay for Ollama
+│       └── log.ts              # Cloudflare Pages function: stdio log sink
 ├── public/
 │   ├── my-custom-library.excalidrawlib   # 73+ custom stencils
 │   └── fonts/…                 # ~230 self-hosted Excalidraw assets
 └── src/
-    ├── App.tsx                 # Canvas workspace (70/30 split), routing, state
+    ├── App.tsx                 # Routing (/ and /voice), auth gates, workspace composition
     ├── main.tsx                # Entry point
     ├── components/
     │   ├── AppHeader.tsx       # Brand, route pills, provider/status badges
     │   ├── AuthLandingView.tsx # Google OAuth sign-in screen
+    │   ├── ChatPanel.tsx       # Right 30% chat UI
     │   ├── ConfigMissingScreen.tsx  # Missing .env fallback
-    │   ├── UserMenu.tsx        # Account menu / sign-out
-    │   └── VoiceWorkspace.tsx  # /voice route (mic + native audio)
+    │   ├── DeleteConfirmModal.tsx   # Session delete confirmation
+    │   ├── ExcalidrawCanvas.tsx     # Left 70% canvas (view-mode lock aware)
+    │   ├── HistoryModal.tsx         # Session history / restore / export
+    │   ├── SettingsModal.tsx        # Provider cards + model dropdowns
+    │   ├── UserMenu.tsx             # Account menu / sign-out
+    │   └── VoiceWorkspace.tsx       # /voice route (mic + native audio)
+    ├── config/
+    │   └── aiModelsConfig.ts   # TASK_MODEL_REGISTRY + UI model presets (single source of truth)
     ├── context/
     │   └── AuthContext.tsx     # Supabase auth state
+    ├── hooks/
+    │   ├── useMainWorkspace.ts # Send flow, canvas bridge, export, theme, lock
+    │   ├── useSessionHistory.ts# Local-first history, restore/delete/PDF
+    │   └── useSettings.ts      # Provider settings + encrypted key hydration
+    ├── aiServices/
+    │   ├── prompts.ts          # Loads .md templates, fills {{PLACEHOLDER}} tokens
+    │   ├── parse.ts            # extractJsonPayload
+    │   ├── audioUtils.ts       # Live-audio helpers
+    │   ├── types.ts            # Shared AI service types
+    │   └── prompt/
+    │       ├── geminiFullDiagram.md  # 2-part JSON contract (chatReply + elements)
+    │       ├── liveAgent.md          # Voice live agent persona
+    │       ├── groqTextOnly.md       # Text-only explanation template
+    │       └── mistralDiagramOnly.md # Diagram-only template
     ├── services/
-    │   ├── aiService.ts        # System prompt contract + Ollama/Gemini backends
+    │   ├── aiService.ts        # Orchestrator agent + diagram engines (Gemini/Ollama)
+    │   ├── webMcpService.ts    # 9 WebMCP tools + ActiveCanvasBridge + topology extraction
+    │   ├── voiceService.ts     # Gemini Live audio + Web Speech fallback + live tool calling
     │   ├── sessionDbService.ts # IndexedDB session persistence
-    │   ├── supabaseDbService.ts# Cloud session persistence
+    │   ├── supabaseDbService.ts# Cloud session persistence (RLS)
     │   ├── supabaseClient.ts   # Supabase client factory
-    │   ├── pdfExportService.ts # jsPDF session report export
-    │   └── voiceService.ts     # Gemini Live audio + Web Speech fallback
+    │   └── pdfExportService.ts # jsPDF session report export
+    ├── types/
+    │   └── chat.ts             # Message types
     └── utils/
+        ├── cryptoStorage.ts    # AES-GCM-256 encrypted localStorage vault
         ├── jsonRepair.ts       # Resilient LLM JSON parser
-        └── libraryIndexer.ts   # Catalog builder + skeleton hydrator
+        ├── libraryIndexer.ts   # Catalog builder + skeleton hydrator + normalizers
+        └── stdioLogger.ts      # Browser → /api/log stdio logger
 ```
 
 ---
@@ -188,8 +250,10 @@ excalidraw-llm/
 
 - **Frontend**: React 19, TypeScript (~6.0), Vite 8
 - **Canvas Engine**: `@excalidraw/excalidraw` (v0.18)
-- **AI Engines**: Ollama API (`gemma4:31b-cloud`), Google Gemini (`@google/genai`, `gemini-3.1-flash-lite` + Gemini Live native audio for Voice Mode), Web Speech API
+- **AI Engines**: Google Gemini (`@google/genai` — `gemini-3.5-flash-lite` + Gemini Live native audio for the Voice agent), Ollama API (`gemma4:31b-cloud`), Web Speech API
+- **Tooling Protocol**: WebMCP — 9 tools registered on `navigator.modelContext`, callable from Gemini function calling, Ollama tool calling, and any WebMCP-compatible client
 - **Auth & Cloud**: Supabase (`@supabase/supabase-js`) — Google OAuth, RLS-isolated session storage
+- **Security**: Web Cryptography API (AES-GCM-256, non-extractable keys) for the API key vault
 - **Export**: jsPDF (session PDF reports), Excalidraw `exportToCanvas` (PNG)
 - **Styling**: Pure vanilla CSS with dark/light themes
 
@@ -199,7 +263,7 @@ excalidraw-llm/
 
 | Command | Description |
 |---|---|
-| `npm run dev` | Start the Vite dev server (includes local `/api/proxy` middleware) |
+| `npm run dev` | Start the Vite dev server (includes local `/api/proxy` + `/api/log` middleware) |
 | `npm run build` | Type-check (`tsc -b`) then production build — type errors block the build |
 | `npm run lint` | ESLint (flat config) |
 | `npm run preview` | Preview the production build |
@@ -208,7 +272,7 @@ excalidraw-llm/
 
 ## 🛠️ WebMCP Tools & Real-World Examples
 
-All workspaces (**Canvas Chat `/`**, **Voice Mode `/voice`**, and **Live Audio Studio `/agentic`**) have direct access to a unified suite of **WebMCP (Web Model Context Protocol)** tools registered on `navigator.modelContext` and available to Gemini, Ollama, and Subagents.
+Both workspaces (**Canvas Chat `/`** and **Voice Agent `/voice`**) share a unified suite of **9 WebMCP (Web Model Context Protocol) tools** registered on `navigator.modelContext` / `window.modelContext` and exposed to Gemini (function calling), Ollama (tool calling), and any WebMCP-compatible agent. The Canvas orchestrator decides which tool to call; the Voice agent calls the same tools mid-conversation.
 
 ---
 
@@ -334,7 +398,7 @@ Resets and clears all vector elements and text from the active scene.
   * **User Prompt:** *"Wipe the canvas, let's draw an Event-Driven Kafka pipeline from scratch."*
   * **Tool Execution:** `clear_canvas({})`
   * **Outcome:** Canvas returns to blank state ready for a new architecture.
-* **Example 2 — Voice Mode Reset:**
+* **Example 2 — Voice Agent Reset:**
   * **User Voice Command:** *"Clear the screen."*
   * **Model Action:** Executes `clear_canvas()` during live voice stream.
 
@@ -347,8 +411,8 @@ Captures a high-resolution base64 PNG screenshot of the canvas for multimodal im
   * **User Prompt:** *"Look at the canvas. Are the arrows aligned cleanly without overlapping text?"*
   * **Tool Execution:** `get_canvas_visual_snapshot({})`
   * **Result:** Returns base64 image data payload for visual model inspection.
-* **Example 2 — Live Audio Studio Spatial Reasoning:**
-  * **Live Agent Action:** Automatically captures visual snapshot mid-conversation to verify spatial node distribution before answering user voice questions.
+* **Example 2 — Voice Agent Spatial Reasoning:**
+  * **Voice Agent Action:** Automatically captures visual snapshot mid-conversation to verify spatial node distribution before answering user voice questions.
 
 ---
 
@@ -369,8 +433,21 @@ Reads recent user specifications, notes, and previous architectural requirements
       ]
     }
     ```
-* **Example 2 — Live Studio Agent Hand-off:**
-  * **Live Agent Action:** Reads notes typed in the chat panel before generating or modifying the canvas.
+* **Example 2 — Voice Agent Hand-off:**
+  * **Voice Agent Action:** Reads notes from the chat panel before generating or modifying the canvas.
+
+---
+
+### 9. 🎨 `generate_diagram_and_explanation` (Full Diagram Synthesis)
+The orchestrator's main entry-point tool: delegates to the **Canvas Diagram Engine** subagent to synthesize a complete architecture diagram on the canvas and produce a structured technical breakdown.
+
+* **Example 1 — Full System Design:**
+  * **User Prompt:** *"Draw an event-driven payment system with Kafka, Redis, and PostgreSQL."*
+  * **Tool Execution:** `generate_diagram_and_explanation({ "prompt": "Event-driven payment system with Kafka, Redis, and PostgreSQL..." })`
+  * **Outcome:** The subagent renders the full multi-tier diagram (producers, topics, consumers, stores) and the orchestrator posts the architectural explanation in the chat bubble.
+* **Example 2 — Voice-Triggered Generation:**
+  * **User Voice Command:** *"Draw a Kubernetes cluster with an ingress and three worker nodes."*
+  * **Model Action:** The Voice agent calls the tool mid-stream; the canvas updates live while the explanation is spoken back.
 
 ---
 
