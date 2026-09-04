@@ -1,4 +1,4 @@
-# Inquisitive - Visual 🎨 | Audio⚡ Visual 🎨 system design , analysis ⚡
+# Inquisitive Dev - Visual 🎨 | Audio⚡ Visual 🎨 system design , analysis ⚡
 
 An intelligent, interactive diagramming assistant built with **React 19**, **TypeScript**, **Vite**, and **@excalidraw/excalidraw** — powered by the **Google Gemini API** (`gemini-3.5-flash-lite`) and **Ollama** (cloud models like `gemma4:31b-cloud`). A **tool-calling orchestrator agent** plans and drives a live Excalidraw canvas through **WebMCP (Model Context Protocol) tools** — describe a system in plain English (type it or say it) and watch the diagram render in real time.
 
