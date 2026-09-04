@@ -1,4 +1,4 @@
-# Inquisitive | Visual Intel — AI Diagram Generator 🎨⚡
+# Inquisitive - Visual 🎨 | Audio⚡ Visual 🎨 system design , analysis ⚡
 
 An intelligent, interactive diagramming assistant built with **React 19**, **TypeScript**, **Vite**, and **@excalidraw/excalidraw** — powered by the **Google Gemini API** (`gemini-3.5-flash-lite`) and **Ollama** (cloud models like `gemma4:31b-cloud`). A **tool-calling orchestrator agent** plans and drives a live Excalidraw canvas through **WebMCP (Model Context Protocol) tools** — describe a system in plain English (type it or say it) and watch the diagram render in real time.
 
@@ -12,12 +12,12 @@ An intelligent, interactive diagramming assistant built with **React 19**, **Typ
 - **Left Panel (70%)**: Full-featured Excalidraw editor canvas (`ExcalidrawCanvas.tsx`).
 - **Right Panel (30%)**: Sleek dark-mode AI Chat UI (`ChatPanel.tsx`) for issuing diagram requests and managing settings.
 
-### 2. 🧠 Agentic Orchestration with WebMCP Tool Calling
+### 2. Agentic Orchestration with WebMCP Tool Calling
 - A **Canvas Orchestrator Agent** (`runCanvasOrchestratorAgent`) plans over **9 WebMCP tools** registered on `navigator.modelContext` / `window.modelContext` and executes them against the live canvas via an `ActiveCanvasBridge` (`useMainWorkspace` → `webMcpService`).
 - **Gemini track**: native function-calling loop (up to 5 turns). **Ollama track**: native `tools` calling over the `/api/proxy` relay.
 - Conceptual/architectural questions are answered directly in the chat; draw/modify requests are routed to the right tool automatically.
 
-### 3. 🦙 Ollama Integration (Cloud & Remote Proxies)
+### 3. Ollama Integration (Cloud & Remote Proxies)
 - Connects to the Ollama cloud host (`https://ollama.com`) or custom remote cloud/proxy endpoints with optional Bearer API key.
 - Automatic routing through the built-in `/api/proxy` relay when direct browser calls are blocked by CORS/mixed-content policies.
 - Model presets from the centralized registry: `gemma4:31b-cloud` (default), `gpt-oss:120b`, `nemotron-3-super`.
